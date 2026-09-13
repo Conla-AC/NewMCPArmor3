@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
 """Canonical example YAML configuration."""
-from __future__ import absolute_import, print_function
+
 
 
 EXAMPLE_CONFIG = '''# py27_byte_obf config.yml
+runtime:
+  python27: null           # CPython 2.7 directory or full python.exe path
+
+static_check:
+  enabled: true            # false skips source compliance checks
+
 project:
   input: MoreTag_clean_input
   output: MoreTag_config_out
@@ -28,6 +34,7 @@ netease:
 
 basic:
   preset: max
+  output_date: 2012-03-15       # fixed watermark/pyc timestamp; accepts YYYY-MM-DD or full timestamp
   resource_profile: balanced # compact/balanced/strong/unlimited
   payload_cipher: legacy       # legacy or chacha; chacha calls NetEase _chacha at runtime
   anti_debug: false            # bind decryption to NetEase native _chacha and behavior-pack header.uuid
@@ -38,12 +45,12 @@ basic:
   debug: false              # full staged loader/payload/code tuple/opcode/source-string logs
 
 source:
+  global_rename: true    # project-wide definitions/imports/members/arguments/locals; NetEase ABI names are protected
+  module_rename: false   # rename .py filenames and relink imports/RegisterSystem/RegisterUI paths (folder mode only)
+  module_rename_exclude: ["modMain.py", "config.py", "__init__.py"]
+  function_split: false          # folder mode: extract eligible functions into sibling modules before Rename
   linearize_calls: false  # source AST layer: split obj.method(...).next(...) into ordered temps
   schedule: false          # source AST layer: split pure expressions then dependency-safe reorder
-  local_rename: false      # source AST layer: rename safe local variables, no runtime work
-  local_rename_max: 48
-  name_obfuscation: false  # source AST layer: rename safe module-level functions/classes and same-file references
-  name_obfuscation_max: 64
   string_split: false      # source AST layer: split safe string literals into equivalent concatenations
   string_split_parts: 3
   string_xor: false        # source AST layer: XOR-encrypt ordinary str/unicode literals and decode on demand
@@ -66,7 +73,9 @@ source:
   comment_noise_count: 2
   dead_flow: false         # source AST layer: inject unreachable fake branches / pseudo control flow
   dead_flow_blocks: 1      # max dead-flow blocks per function; 1-2 is usually enough
-  vm: false                # randomized register VM plus provider lattice, payload mirage, identity-weave and first-use fast cache
+  vm: false                # legacy alias; equivalent to vm_extension
+  vm_ir: false             # full-coverage VM-IR profile (maps to VM full mode)
+  vm_extension: false      # selective AST VM plus provider/carrier extensions
   vm_full: false           # 100% of supported non-hot functions, loops enabled, expanded limits
   vm_ratio: 15             # percentage of eligible functions selected
   vm_min_ops: 8            # skip tiny functions where VM overhead is not worthwhile
@@ -77,7 +86,7 @@ source:
   vm_allow_loops: false    # opt-in: loop virtualization is supported but costs more per iteration
   vm_debug: false          # print one runtime installation log per virtualized module
   flow_hardening: false    # project analysis + internal predicates + flow-bound multi-dialect VM
-  project_analysis: false  # scan the complete source folder before transforming individual files
+  project_analysis: true   # required by project-wide global Rename planning
   internal_predicates: false # hidden parameters only for closed private same-module call groups
   internal_predicate_ratio: 70
   hot_patterns: ["On*", "*Tick*", "*Update*", "*Timer*", "*Frame*", "*Render*", "Listen*", "Notify*", "Callback", "Destroy", "__*__"]
@@ -272,4 +281,4 @@ bad:
   dead_arg_poison: 12
   dead_exception_poison: 6
   dead_call_poison: 6
-'''
+'''\n

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Source VM eligibility analysis and instruction compilation."""
-from __future__ import absolute_import, print_function
+
 
 import ast
 
@@ -45,6 +45,13 @@ class SourceVMLocalCollector(ast.NodeVisitor):
     def visit_Name(self, node):
         if isinstance(node.ctx, (ast.Store, ast.Del)):
             self.add(node.id)
+
+    def visit_ExceptHandler(self, node):
+        # ``except E as name:`` binds a fresh local whose name lives in a
+        # string field on the handler rather than an ast.Name node.
+        if isinstance(node.name, str):
+            self.add(node.name)
+        self.generic_visit(node)
 
     def visit_Global(self, node):
         return
@@ -161,19 +168,57 @@ class SourceVMEligibility(ast.NodeVisitor):
             if handler.type is None and index + 1 != len(node.handlers):
                 self.reject('bare-except-order')
                 return
-            if handler.name is not None and not isinstance(handler.name, ast.Name):
+            if (handler.name is not None and
+                    not isinstance(handler.name, str) and
+                    not isinstance(handler.name, ast.Name)):
                 self.reject('except-target')
                 return
         self.generic_visit(node)
 
+    def _reject_finally_exit(self, finalbody):
+        # A finally body with its own return/break/continue would re-enter the
+        # inline-finally machinery; keep such functions native for now.
+        for stmt in finalbody or ():
+            for child in ast.walk(stmt):
+                if isinstance(child, (ast.Return, ast.Break, ast.Continue)):
+                    self.reject('finally-exit')
+                    return True
+        return False
+
     def visit_TryFinally(self, node):
-        self.reject('exception')
+        if self._reject_finally_exit(node.finalbody):
+            return
+        self.generic_visit(node)
+
+    def visit_Try(self, node):
+        # Python 3 unified Try(handlers, orelse, finalbody).
+        if self._reject_finally_exit(getattr(node, 'finalbody', None)):
+            return
+        for index, handler in enumerate(node.handlers):
+            if handler.type is None and index + 1 != len(node.handlers):
+                self.reject('bare-except-order')
+                return
+            if (handler.name is not None and
+                    not isinstance(handler.name, str) and
+                    not isinstance(handler.name, ast.Name)):
+                self.reject('except-target')
+                return
+        self.generic_visit(node)
 
     def visit_With(self, node):
+        # ``with`` is desugared into enter/exit calls + try/except/finally by
+        # SourceWithDesugar before this pass; a surviving node (e.g. Python 3
+        # multi-item with) keeps the function native.
         self.reject('with')
 
     def visit_Raise(self, node):
-        if node.inst is not None or node.tback is not None:
+        if hasattr(node, 'inst'):
+            # Python 2 Raise(type, inst, tback)
+            if node.inst is not None or node.tback is not None:
+                self.reject('complex-raise')
+                return
+        elif getattr(node, 'cause', None) is not None:
+            # Python 3 Raise(exc, cause)
             self.reject('complex-raise')
             return
         self.generic_visit(node)
@@ -211,10 +256,18 @@ class SourceVMEligibility(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node):
-        if not isinstance(node.slice, (ast.Index, ast.Slice)):
-            self.reject('slice')
+        # Python 2 wraps simple subscripts in ast.Index; Python 3 exposes the
+        # value (Constant), ast.Slice, or an ast.Tuple for extended slices
+        # directly.  Accept all three modern forms so subscripts stop being
+        # silently rejected on the Python 3 host.
+        if hasattr(ast, 'Index') and isinstance(node.slice, (ast.Index, ast.Slice)):
+            self.generic_visit(node)
             return
-        self.generic_visit(node)
+        constant = getattr(ast, 'Constant', None)
+        if constant is not None and isinstance(node.slice, (constant, ast.Slice, ast.Tuple)):
+            self.generic_visit(node)
+            return
+        self.reject('slice')
 
     def visit_Name(self, node):
         self.node_count += 1
@@ -275,11 +328,22 @@ class SourceVMCompiler(object):
         for stmt in node.body:
             global_collector.visit(stmt)
         self.global_names = global_collector.names
-        argument_names = list(node.args.args)
+        # Python 2 exposes argument names as strings while Python 3 uses
+        # ``ast.arg`` objects.  Normalize both forms before collecting locals;
+        # otherwise every parameter is emitted as a GLOBAL reference.
+        argument_names = [
+            (item.arg if hasattr(item, 'arg') else
+             (item.id if hasattr(item, 'id') else item))
+            for item in node.args.args
+        ]
         if node.args.vararg:
-            argument_names.append(node.args.vararg)
+            argument_names.append(
+                node.args.vararg.arg if hasattr(node.args.vararg, 'arg')
+                else node.args.vararg)
         if node.args.kwarg:
-            argument_names.append(node.args.kwarg)
+            argument_names.append(
+                node.args.kwarg.arg if hasattr(node.args.kwarg, 'arg')
+                else node.args.kwarg)
         collector = SourceVMLocalCollector(argument_names, self.global_names)
         for stmt in node.body:
             collector.visit(stmt)
@@ -300,6 +364,7 @@ class SourceVMCompiler(object):
         self.active_exception_regs = []
         self.instruction_handlers = []
         self.exception_contexts = []
+        self.finally_stack = []
 
     def new_reg(self):
         if self.free_regs:
@@ -360,6 +425,9 @@ class SourceVMCompiler(object):
             target = self.new_reg()
             self.emit('GLOBAL', target, self.add_name(node.id))
             return target
+        if hasattr(ast, 'Constant') and isinstance(node, ast.Constant):
+            # Python 3 folds Num/Str/NameConstant/Ellipsis into Constant.
+            return self.const_reg(node.value)
         if isinstance(node, ast.Num):
             return self.const_reg(node.n)
         if isinstance(node, ast.Str):
@@ -561,6 +629,86 @@ class SourceVMCompiler(object):
             return
         raise ValueError('source VM target unsupported')
 
+    def _compile_try_except(self, body, handlers, orelse):
+        type_regs = []
+        for handler in handlers:
+            type_regs.append(
+                self.compile_expr(handler.type)
+                if handler.type is not None else -1)
+        exception_reg = self.new_reg()
+        context_id = len(self.exception_contexts)
+        context = {'clauses': [], 'exception_reg': exception_reg}
+        self.exception_contexts.append(context)
+        self.exception_stack.append(context_id)
+        for stmt in body:
+            self.compile_stmt(stmt)
+        self.exception_stack.pop()
+        normal_jump = self.emit('JUMP', -1)
+        handler_jumps = []
+        for handler, type_reg in zip(handlers, type_regs):
+            handler_start = len(self.instructions)
+            context['clauses'].append((type_reg, handler_start))
+            if handler.name is not None:
+                target_name = (handler.name if isinstance(handler.name, str)
+                               else getattr(handler.name, 'id', None))
+                if target_name is None:
+                    raise ValueError('source VM exception target unsupported')
+                self.store_target(
+                    ast.Name(id=target_name, ctx=ast.Store()), exception_reg)
+            self.active_exception_regs.append(exception_reg)
+            for stmt in handler.body:
+                self.compile_stmt(stmt)
+            self.active_exception_regs.pop()
+            handler_jumps.append(self.emit('JUMP', -1))
+        else_start = len(self.instructions)
+        self.patch(normal_jump, 1, else_start)
+        for stmt in orelse:
+            self.compile_stmt(stmt)
+        end = len(self.instructions)
+        for index in handler_jumps:
+            self.patch(index, 1, end)
+        self.release_regs(type_regs)
+        self.release_reg(exception_reg)
+
+    def _compile_statements(self, stmts):
+        for stmt in stmts:
+            self.compile_stmt(stmt)
+
+    def _emit_finally_inline(self, final_stmts):
+        for stmt in final_stmts:
+            self.compile_stmt(stmt)
+
+    def _emit_pending_finally(self):
+        # finally bodies never contain return/break/continue (rejected by the
+        # eligibility pass), so inlining them cannot re-enter this helper.
+        for final_stmts in reversed(self.finally_stack):
+            self._emit_finally_inline(final_stmts)
+
+    def _compile_try_finally(self, inner_fn, finalbody):
+        self.finally_stack.append(finalbody)
+        exception_reg = self.new_reg()
+        context_id = len(self.exception_contexts)
+        context = {'clauses': [], 'exception_reg': exception_reg}
+        self.exception_contexts.append(context)
+        self.exception_stack.append(context_id)
+        try:
+            inner_fn()
+        finally:
+            self.exception_stack.pop()
+            self.finally_stack.pop()
+        # Normal completion runs the finally block, then skips the re-raise
+        # path.  Exceptions inside the protected region match the catch-all
+        # clause below, run the finally block, and re-raise the original error.
+        self._emit_finally_inline(finalbody)
+        skip = self.emit('JUMP', -1)
+        finally_start = len(self.instructions)
+        context['clauses'].append((-1, finally_start))
+        self._emit_finally_inline(finalbody)
+        self.emit('RAISE', exception_reg)
+        end = len(self.instructions)
+        self.patch(skip, 1, end)
+        self.release_reg(exception_reg)
+
     def compile_stmt(self, node):
         if isinstance(node, ast.Assign):
             value = self.compile_expr(node.value)
@@ -627,14 +775,20 @@ class SourceVMCompiler(object):
             self.release_regs((test, message))
             return
         if isinstance(node, ast.Raise):
-            if node.type is None:
+            if hasattr(node, 'type'):
+                # Python 2 Raise(type, inst, tback)
+                exc_node = node.type
+            else:
+                # Python 3 Raise(exc, cause)
+                exc_node = node.exc
+            if exc_node is None:
                 if not self.active_exception_regs:
                     raise ValueError('source VM bare raise outside handler')
                 value = self.active_exception_regs[-1]
             else:
-                value = self.compile_expr(node.type)
+                value = self.compile_expr(exc_node)
             self.emit('RAISE', value)
-            if node.type is not None:
+            if exc_node is not None:
                 self.release_reg(value)
             return
         if isinstance(node, ast.Expr):
@@ -642,6 +796,7 @@ class SourceVMCompiler(object):
             return
         if isinstance(node, ast.Return):
             value = self.compile_expr(node.value) if node.value is not None else self.const_reg(None)
+            self._emit_pending_finally()
             self.emit('RETURN', value)
             self.release_reg(value)
             return
@@ -662,41 +817,24 @@ class SourceVMCompiler(object):
             else:
                 self.patch(false_jump, 2, len(self.instructions))
             return
-        if isinstance(node, ast.TryExcept):
-            type_regs = []
-            for handler in node.handlers:
-                type_regs.append(
-                    self.compile_expr(handler.type)
-                    if handler.type is not None else -1)
-            exception_reg = self.new_reg()
-            context_id = len(self.exception_contexts)
-            context = {'clauses': [], 'exception_reg': exception_reg}
-            self.exception_contexts.append(context)
-            self.exception_stack.append(context_id)
-            for stmt in node.body:
-                self.compile_stmt(stmt)
-            self.exception_stack.pop()
-            normal_jump = self.emit('JUMP', -1)
-            handler_jumps = []
-            for handler, type_reg in zip(node.handlers, type_regs):
-                handler_start = len(self.instructions)
-                context['clauses'].append((type_reg, handler_start))
-                if handler.name is not None:
-                    self.store_target(handler.name, exception_reg)
-                self.active_exception_regs.append(exception_reg)
-                for stmt in handler.body:
-                    self.compile_stmt(stmt)
-                self.active_exception_regs.pop()
-                handler_jumps.append(self.emit('JUMP', -1))
-            else_start = len(self.instructions)
-            self.patch(normal_jump, 1, else_start)
-            for stmt in node.orelse:
-                self.compile_stmt(stmt)
-            end = len(self.instructions)
-            for index in handler_jumps:
-                self.patch(index, 1, end)
-            self.release_regs(type_regs)
-            self.release_reg(exception_reg)
+        try_finally = getattr(ast, 'TryFinally', None)
+        if try_finally is not None and isinstance(node, try_finally):
+            self._compile_try_finally(
+                lambda: self._compile_statements(node.body), node.finalbody)
+            return
+        try_except = getattr(ast, 'TryExcept', None)
+        if try_except is not None and isinstance(node, try_except):
+            self._compile_try_except(node.body, node.handlers, node.orelse)
+            return
+        try_node = getattr(ast, 'Try', None)
+        if try_node is not None and isinstance(node, try_node):
+            if node.finalbody:
+                self._compile_try_finally(
+                    lambda: self._compile_try_except(
+                        node.body, node.handlers, node.orelse),
+                    node.finalbody)
+            else:
+                self._compile_try_except(node.body, node.handlers, node.orelse)
             return
         if isinstance(node, ast.While):
             start = len(self.instructions)
@@ -745,11 +883,13 @@ class SourceVMCompiler(object):
         if isinstance(node, ast.Break):
             if not self.loop_stack:
                 raise ValueError('source VM break outside loop')
+            self._emit_pending_finally()
             self.loop_stack[-1]['breaks'].append(self.emit('JUMP', -1))
             return
         if isinstance(node, ast.Continue):
             if not self.loop_stack:
                 raise ValueError('source VM continue outside loop')
+            self._emit_pending_finally()
             self.emit('JUMP', self.loop_stack[-1]['continue'])
             return
         if isinstance(node, ast.Pass):
@@ -762,4 +902,4 @@ class SourceVMCompiler(object):
         value = self.const_reg(None)
         self.emit('RETURN', value)
         self.release_reg(value)
-        return self
+        return self\n

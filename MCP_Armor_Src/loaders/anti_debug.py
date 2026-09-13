@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Build the optional one-shot loader anti-debug and anti-tamper guard."""
-from __future__ import absolute_import, print_function
+
 
 import hashlib
 import hmac
 import random
 
-from MCP_Armor_Src.utils.encoding import random_bytes, random_ident, visual_int
+from MCP_Armor_Src.utils.encoding import byte_char, byte_value, random_bytes, random_ident, visual_int
 
 
 DEBUG_MODULES = (
@@ -18,7 +18,7 @@ DEBUG_MODULES = (
 def _encoded_bytes(value):
     seed = random.randint(1, 255)
     row = tuple(
-        ord(ch) ^ ((seed + (index * 131)) & 255)
+        byte_value(ch) ^ ((seed + (index * 131)) & 255)
         for index, ch in enumerate(value)
     )
     return repr(row), seed
@@ -247,4 +247,4 @@ def %(codecheck)s(%(code)s, %(token)s):
         'anti_debug_pre_code': pre_code,
         'anti_debug_raw_code': raw_code,
         'anti_debug_code_code': code_code,
-    }
+    }\n

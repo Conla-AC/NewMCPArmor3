@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Generated outer runtime protection layers."""
-from __future__ import absolute_import, print_function
+
 
 import random
 
@@ -721,4 +721,4 @@ def build_outer_runtime_parts(names, options):
         'closure_vault_setup_code': closure_setup,
         'runtime_key_expr': runtime_key_expr,
         'outer_dispatch_code': '\n'.join(lines),
-    }
+    }\n

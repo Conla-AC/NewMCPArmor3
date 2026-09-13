@@ -15,13 +15,27 @@ from MCP_Armor_Src.hwid import validate_license
 
 
 APP_TITLE = "MCP Shiled 混淆器"
-# PyInstaller exposes ``sys.frozen`` while Nuitka exposes ``__compiled__``.
-# Enigma may expose the executable through an 8.3 path, so runtime files must
-# be located from the executable/argv directories rather than ``__file__``.
-FROZEN = bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
 PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 ARGV_DIR = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv else PACKAGE_DIR
-APP_DIR = os.path.dirname(os.path.abspath(sys.executable)) if FROZEN else PACKAGE_DIR
+
+
+def _is_nuitka_compiled():
+    try:
+        __compiled__
+    except NameError:
+        return False
+    return True
+
+
+# PyInstaller exposes sys.frozen. Nuitka onefile preserves the outer EXE in
+# argv[0], while __file__ points at its temporary extraction directory.
+ARGV_IS_EXE = bool(sys.argv and os.path.abspath(sys.argv[0]).lower().endswith(
+    (".exe", ".com")))
+FROZEN = bool(getattr(sys, "frozen", False) or _is_nuitka_compiled()
+              or ARGV_IS_EXE)
+APP_DIR = (ARGV_DIR if FROZEN and ARGV_IS_EXE else
+           (os.path.dirname(os.path.abspath(sys.executable))
+            if FROZEN else PACKAGE_DIR))
 ROOT_DIR = APP_DIR if FROZEN else os.path.dirname(PACKAGE_DIR)
 
 
@@ -57,7 +71,10 @@ def _find_resource_dir():
 
 RESOURCE_DIR = _find_resource_dir()
 STATE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", APP_DIR), "MCPArmor")
+# The source tree uses the package entry point; a root-level main.py is only
+# kept as a legacy fallback for older distributions.
 OBFUSCATOR = os.path.join(ROOT_DIR, "main.py")
+OBFUSCATOR_MODULE = os.path.join(ROOT_DIR, "MCP_Armor_Src", "__main__.py")
 OBFUSCATOR_EXE_NAMES = [
     "01_MCPArmor_CLI_protected.exe",
     "01_MCPArmor_CLI.exe",
@@ -113,7 +130,7 @@ def find_obfuscator_cwd():
     exe = find_obfuscator_exe()
     if exe:
         return os.path.dirname(os.path.abspath(exe))
-    return ROOT_DIR
+    return ROOT_DIR if os.path.isdir(os.path.join(ROOT_DIR, "MCP_Armor_Src")) else APP_DIR
 
 
 def yaml_scalar(value):
@@ -354,6 +371,7 @@ class ObfUI(tk.Tk):
         self.v("exclude", "modMain.py;__init__.py")
         self.v("plain_copy", "")
         self.v("deploy_target", "")
+        self.v("output_date", "2012-03-15")
         self.path_group(b, "输入文件或项目目录", "input", self.pick_input)
         self.path_group(b, "输出文件或项目目录", "output", self.pick_output)
         self.path_group(b, "部署目标目录（可留空）", "deploy_target", self.pick_deploy)
@@ -368,6 +386,7 @@ class ObfUI(tk.Tk):
         self.entry(filters, 0, "包含规则", "include", width=48)
         self.entry(filters, 1, "排除混淆", "exclude", width=48)
         self.entry(filters, 2, "原样复制", "plain_copy", width=48)
+        self.entry(filters, 3, "输出日期（水印/pyc）", "output_date", width=24)
 
     def _profile_tab(self, notebook):
         tab = ScrollFrame(notebook)
@@ -407,8 +426,10 @@ class ObfUI(tk.Tk):
         defaults = {
             "source_linearize_calls": True, "source_schedule": True,
             "source_schedule_max_exprs": 4, "source_schedule_window": 8,
-            "source_local_rename": True, "source_local_rename_max": 48,
-            "source_name_obfuscation": False, "source_name_obfuscation_max": 64,
+            "source_global_rename": True,
+            "source_module_rename": False,
+            "source_function_split": False,
+            "source_module_rename_exclude": "modMain.py;config.py;__init__.py",
             "source_string_split": False, "source_string_split_parts": 3,
             "source_string_xor": False, "source_string_xor_mode": "random",
             "source_string_xor_text": "MCP_Shiled", "source_string_xor_number": 173,
@@ -427,7 +448,7 @@ class ObfUI(tk.Tk):
             "source_vm_include": "", "source_vm_exclude": "On*;*Tick*;*Update*;*Timer*;*Frame*;*Render*;Listen*;Notify*;NeteaseMod*;__*__",
             "source_vm_allow_loops": False, "source_vm_debug": False,
             "source_flow_hardening": False,
-            "source_project_analysis": False,
+            "source_project_analysis": True,
             "source_internal_predicates": False,
             "source_internal_predicate_ratio": 70,
             "source_hot_pattern": "On*;*Tick*;*Update*;*Timer*;*Frame*;*Render*;Listen*;Notify*;Callback;Destroy;__*__",
@@ -455,8 +476,9 @@ class ObfUI(tk.Tk):
         basic = self.group(b, "低开销源码变换")
         self.check(basic, 0, 0, "source_linearize_calls", "调用链线性化")
         self.check(basic, 0, 2, "source_schedule", "表达式调度与安全重排")
-        self.check(basic, 1, 0, "source_local_rename", "局部变量改名")
-        self.check(basic, 1, 2, "source_name_obfuscation", "函数名与类名混淆")
+        self.check(basic, 1, 0, "source_global_rename", "全项目统一 Rename")
+        self.check(basic, 1, 2, "source_module_rename", "Python 文件名混淆与注册重定位")
+        self.check(basic, 1, 4, "source_function_split", "函数/类方法拆分为独立模块")
         self.check(basic, 2, 0, "source_string_split", "字符串分片")
         self.check(basic, 2, 2, "source_constant_pool", "局部常量池")
         self.check(basic, 3, 0, "source_constant_rewrite", "整数常量等价改写")
@@ -464,8 +486,6 @@ class ObfUI(tk.Tk):
         self.check(basic, 4, 0, "source_parenthesis_noise", "无意义括号噪音")
         self.check(basic, 4, 2, "source_comment_noise", "注释与空白噪音")
         self.check(basic, 5, 0, "source_dead_flow", "死代码与伪控制流")
-        self.entry(basic, 6, "局部改名上限", "source_local_rename_max")
-        self.entry(basic, 6, "函数/类改名上限", "source_name_obfuscation_max", col=2)
         self.entry(basic, 7, "字符串分片数", "source_string_split_parts")
         self.entry(basic, 7, "常量改写上限", "source_constant_rewrite_limit", col=2)
         self.entry(basic, 8, "常量池最小值", "source_constant_pool_min")
@@ -474,6 +494,7 @@ class ObfUI(tk.Tk):
         self.entry(basic, 9, "注释噪音数量", "source_comment_noise_count", col=2)
         self.entry(basic, 10, "调度表达式上限", "source_schedule_max_exprs")
         self.entry(basic, 10, "调度窗口", "source_schedule_window", col=2)
+        self.entry(basic, 11, "文件名 Rename 排除", "source_module_rename_exclude")
 
         string_box = self.group(b, "字符串异或加密")
         self.check(string_box, 0, 0, "source_string_xor", "启用字符串异或加密")
@@ -486,7 +507,7 @@ class ObfUI(tk.Tk):
         self.entry(string_box, 3, "真实解密器变体", "source_string_xor_variants", col=2)
         self.entry(string_box, 4, "伪解密器数量", "source_string_xor_decoys")
 
-        vm = self.group(b, "AST 虚拟机（VM）")
+        vm = self.group(b, "AST 虚拟机（VM）· 支持闭包/with/try-finally/生成器")
         self.check(vm, 0, 0, "source_vm", "启用随机寄存器 VM")
         self.check(vm, 0, 2, "source_vm_allow_loops", "允许虚拟化循环（更慢）")
         self.check(vm, 1, 2, "source_vm_full", "完整 VM（保留热路径排除）")
@@ -645,14 +666,15 @@ class ObfUI(tk.Tk):
             "bytecode_stack_noise": False, "bytecode_stack_noise_interval": 18,
             "bytecode_stack_noise_limit": 6, "bytecode_jump_inversion": False,
             "bytecode_jump_inversion_limit": 4, "bytecode_jump_trampolines": False,
-            "bytecode_jump_trampoline_limit": 4, "bytecode_cfg_flow": False,
-            "bytecode_cfg_flow_ratio": 35, "bytecode_cfg_flow_max_edges": 6,
-            "bytecode_cfg_block_seeds": False,
-            "bytecode_cfg_block_seed_ratio": 35,
-            "bytecode_cfg_block_seed_max_blocks": 64,
-            "bytecode_cfg_block_shuffle": False,
-            "bytecode_cfg_block_shuffle_ratio": 35,
-            "bytecode_cfg_block_shuffle_max_blocks": 192,
+            "bytecode_jump_trampoline_limit": 4, "bytecode_flow": False,
+            "bytecode_flow_ratio": 35, "bytecode_flow_max_edges": 6,
+            "bytecode_flow_loop_dispatch": False,
+            "bytecode_flow_block_seeds": False,
+            "bytecode_flow_block_seed_ratio": 35,
+            "bytecode_flow_block_seed_max_blocks": 64,
+            "bytecode_flow_block_shuffle": False,
+            "bytecode_flow_block_shuffle_ratio": 35,
+            "bytecode_flow_block_shuffle_max_blocks": 192,
             "bytecode_strategy_variation": False,
             "bytecode_strategy_seed": 0, "bytecode_delayed_const_access": False,
             "bytecode_delayed_const_limit": 3, "bytecode_extended_arg_prefix": False,
@@ -708,15 +730,16 @@ class ObfUI(tk.Tk):
         self.check(transforms, 7, 0, "slot_mirage", ".N 局部槽位海市蜃楼")
         self.entry(transforms, 7, "槽位改名上限", "slot_mirage_limit", col=2)
 
-        self.check(transforms, 8, 0, "bytecode_cfg_flow", "CFG 控制流代理")
-        self.entry(transforms, 8, "CFG 选择比例", "bytecode_cfg_flow_ratio", col=2)
-        self.entry(transforms, 9, "CFG 单函数上限", "bytecode_cfg_flow_max_edges")
-        self.check(transforms, 10, 0, "bytecode_cfg_block_seeds", "CFG 块级 Seed")
-        self.entry(transforms, 10, "块 Seed 函数比例", "bytecode_cfg_block_seed_ratio", col=2)
-        self.entry(transforms, 11, "块 Seed 块数上限", "bytecode_cfg_block_seed_max_blocks")
-        self.check(transforms, 12, 0, "bytecode_cfg_block_shuffle", "CFG 物理块乱序")
-        self.entry(transforms, 12, "块乱序函数比例", "bytecode_cfg_block_shuffle_ratio", col=2)
-        self.entry(transforms, 13, "块乱序块数上限", "bytecode_cfg_block_shuffle_max_blocks")
+        self.check(transforms, 8, 0, "bytecode_flow", "ByteCode_Flow 控制流代理")
+        self.entry(transforms, 8, "ByteCode_Flow 选择比例", "bytecode_flow_ratio", col=2)
+        self.entry(transforms, 9, "ByteCode_Flow 单函数上限", "bytecode_flow_max_edges")
+        self.check(transforms, 9, 2, "bytecode_flow_loop_dispatch", "ByteCode_Flow 循环状态机（实验）")
+        self.check(transforms, 10, 0, "bytecode_flow_block_seeds", "ByteCode_Flow 块级 Seed")
+        self.entry(transforms, 10, "块 Seed 函数比例", "bytecode_flow_block_seed_ratio", col=2)
+        self.entry(transforms, 11, "块 Seed 块数上限", "bytecode_flow_block_seed_max_blocks")
+        self.check(transforms, 12, 0, "bytecode_flow_block_shuffle", "ByteCode_Flow 物理块乱序")
+        self.entry(transforms, 12, "块乱序函数比例", "bytecode_flow_block_shuffle_ratio", col=2)
+        self.entry(transforms, 13, "块乱序块数上限", "bytecode_flow_block_shuffle_max_blocks")
 
         gates = self.group(b, "门控、Opaque 与死块")
         self.check(gates, 0, 0, "bytecode_split_gates", "字节码拆分门")
@@ -900,9 +923,10 @@ class ObfUI(tk.Tk):
         lines = [
             "程序目录：" + ROOT_DIR,
             "混淆器 EXE：" + (find_obfuscator_exe() or "未找到"),
-            "混淆器源码：" + ("可用" if os.path.exists(OBFUSCATOR) else "未找到"),
+            "混淆器源码：" + ("可用" if (os.path.isfile(OBFUSCATOR_MODULE) or
+                                      os.path.isfile(OBFUSCATOR)) else "未找到"),
             "Logo：" + ("可用" if os.path.exists(LOGO_PATH) else "未找到"),
-            "运行策略：优先使用混淆器 EXE，否则调用 py -2 源码",
+            "运行策略：优先使用同目录 CLI EXE，否则调用 Python 3 MCP_Armor_Src",
         ]
         self.env_text.delete("1.0", "end")
         self.env_text.insert("end", "\n".join(lines))
@@ -919,7 +943,7 @@ class ObfUI(tk.Tk):
         value = self.vars[name].get()
         if isinstance(value, str):
             text = value.strip()
-            if text == "":
+            if text == "" or text.lower() in ("none", "null", "~"):
                 return None
             if text.lstrip("-").isdigit():
                 try:
@@ -940,6 +964,10 @@ class ObfUI(tk.Tk):
                 cfg[name] = value
         cfg["input"] = self.vars["input"].get()
         cfg["output"] = self.vars["output"].get()
+        # Source compliance is a mandatory pipeline stage in both UIs.  The
+        # full UI does not expose a bypass checkbox; projects may still use
+        # the documented root marker when they intentionally need one.
+        cfg["static_check"] = True
         cfg["source_only"] = self.split_patterns(self.vars["source_only"].get())
         cfg["ast_exclude"] = self.split_patterns(self.vars["ast_exclude"].get())
         cfg["source_vm_include"] = self.split_patterns(self.vars["source_vm_include"].get())
@@ -948,6 +976,8 @@ class ObfUI(tk.Tk):
             self.vars["source_hot_pattern"].get())
         cfg["source_reference_obf_exclude"] = self.split_patterns(
             self.vars["source_reference_obf_exclude"].get())
+        cfg["source_module_rename_exclude"] = self.split_patterns(
+            self.vars["source_module_rename_exclude"].get())
         cfg["lazy_capsule_include"] = self.split_patterns(self.vars["lazy_capsule_include"].get())
         cfg["lazy_capsule_exclude"] = self.split_patterns(self.vars["lazy_capsule_exclude"].get())
         cfg["include"] = self.split_patterns(self.vars["include"].get())
@@ -996,7 +1026,16 @@ class ObfUI(tk.Tk):
         exe = find_obfuscator_exe()
         if exe:
             return [exe, "--config", RUN_CONFIG]
-        return ["py", "-2", OBFUSCATOR, "--config", RUN_CONFIG]
+        if FROZEN and ARGV_IS_EXE:
+            return [os.path.abspath(sys.argv[0]), "--mcparmor-cli",
+                    "--config", RUN_CONFIG]
+        # Source-checkout fallback: run the package host directly.  The
+        # repository no longer ships a root-level main.py and invoking the
+        # Python-2 launcher here made the UI report a missing executable.
+        if os.path.isfile(OBFUSCATOR_MODULE):
+            return [sys.executable, "-m", "MCP_Armor_Src",
+                    "--config", RUN_CONFIG]
+        return [sys.executable, OBFUSCATOR, "--config", RUN_CONFIG]
 
     def build_cwd(self):
         return find_obfuscator_cwd()
@@ -1008,8 +1047,13 @@ class ObfUI(tk.Tk):
         if self.running:
             messagebox.showinfo(APP_TITLE, "混淆器正在运行，请等待当前任务完成。")
             return
-        if not find_obfuscator_exe() and not os.path.exists(OBFUSCATOR):
-            messagebox.showerror(APP_TITLE, "找不到混淆器 EXE 或根目录 main.py。")
+        if (not FROZEN and not find_obfuscator_exe()
+                and not os.path.isfile(OBFUSCATOR_MODULE)
+                and not os.path.isfile(OBFUSCATOR)):
+            messagebox.showerror(
+                APP_TITLE,
+                "未找到混淆器 CLI 或 MCP_Armor_Src 包入口。\n"
+                "请将 01_MCPArmor_CLI.exe 放在 UI 同目录，或从项目根目录运行。")
             return
         self.write_run_config()
         argv = self.build_argv()
@@ -1064,7 +1108,7 @@ class ObfUI(tk.Tk):
 
     def apply_config(self, data):
         for name, value in data.items():
-            if name in ("include", "exclude", "plain_copy", "source_only", "ast_exclude", "opcode_exclude", "source_vm_include", "source_vm_exclude", "source_hot_pattern", "source_reference_obf_exclude", "lazy_capsule_include", "lazy_capsule_exclude") and isinstance(value, list):
+            if name in ("include", "exclude", "plain_copy", "source_only", "ast_exclude", "opcode_exclude", "source_vm_include", "source_vm_exclude", "source_hot_pattern", "source_reference_obf_exclude", "source_module_rename_exclude", "lazy_capsule_include", "lazy_capsule_exclude") and isinstance(value, list):
                 value = ";".join(str(x) for x in value)
             if name in self.vars:
                 self.vars[name].set(value)
@@ -1148,4 +1192,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()\n

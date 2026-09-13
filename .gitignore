@@ -1,5 +1,12 @@
+﻿# Python/build artefacts
 __pycache__/
 *.pyc
 *.pyo
 *.zip
 .qoder/
+build/*
+!build/build_nuitka_three.ps1
+# Local generated output and caches
+Pack_*/
+dist/
+*.log

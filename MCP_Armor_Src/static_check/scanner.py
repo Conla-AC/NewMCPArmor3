@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
 """Static compliance checks for source files about to be obfuscated."""
-from __future__ import absolute_import
+
 
 import ast
 import base64
 import binascii
 import hashlib
+import io
 import os
+import re
+import subprocess
+import sys
+import token
+import tokenize
 
-from MCP_Armor_Src.utils.filesystem import python_compile_filename
+from MCP_Armor_Src.compat.python27 import resolve_python27
+from MCP_Armor_Src.utils.filesystem import decode_source_bytes, python_compile_filename
 
 from MCP_Armor_Src.static_check.whitelist import (
     RULESET_VERSION,
@@ -18,6 +25,7 @@ from MCP_Armor_Src.static_check.whitelist import (
 
 BYPASS_FILENAME = '__BY_PASS_STATIC__.txt'
 BYPASS_TOKEN = '__CONLAPASSED__'
+SCANNER_RULESET_VERSION = 'static-scanner-2026-08-20-r4-py27-syntax'
 _SCAN_CACHE = {}
 _SCAN_CACHE_LIMIT = 512
 _FAST_SKIP_TOKENS = (
@@ -87,9 +95,9 @@ def _bypass_enabled(root):
             value = handle.read(256)
     except (IOError, OSError):
         return False
-    if value.startswith('\xef\xbb\xbf'):
+    if value.startswith(b'\xef\xbb\xbf'):
         value = value[3:]
-    return value.strip() == BYPASS_TOKEN
+    return value.strip() == BYPASS_TOKEN.encode('utf-8')
 
 
 def _iter_python_files(root, excluded_roots=None):
@@ -122,6 +130,12 @@ def _module_names(root, python_files):
             continue
         module_name = '.'.join(parts)
         modules.add(module_name)
+        # Python 2 permits implicit relative imports from a package's sibling
+        # directory (``import socket`` inside ``pkg/consumer.py``).  Keep the
+        # basename alias in the project index so that form is recognized as a
+        # source-local edge rather than an SDK whitelist lookup.
+        if stem != '__init__':
+            modules.add(stem)
         modules.add(package_root + '.' + module_name)
         for index in range(1, len(parts)):
             modules.add('.'.join(parts[:index]))
@@ -214,10 +228,16 @@ class _SourceVisitor(ast.NodeVisitor):
     def _check_module(self, node, module_name):
         if not module_name:
             return
+        # Python resolves a same-directory module before the SDK/stdlib path.
+        # Check the complete project index first; otherwise a legitimate
+        # sibling such as ``socket.py`` or ``os.py`` is reported as a blocked
+        # external import merely because its filename matches a protected
+        # root.  The source file itself is still scanned for dangerous calls.
+        if _is_local_module(module_name, self.local_modules):
+            return
         module_root = module_name.split('.', 1)[0]
         if (module_root not in _PROTECTED_IMPORT_ROOTS and
-                (_is_local_module(module_name, self.local_modules) or
-                 is_whitelisted_module(module_name))):
+                is_whitelisted_module(module_name)):
             return
         if is_whitelisted_module(module_name):
             return
@@ -443,7 +463,7 @@ class _SourceVisitor(ast.NodeVisitor):
         """Bind Python 2 names, tuple-unpacked args and newer ast.arg nodes."""
         if argument is None:
             return
-        if isinstance(argument, basestring):
+        if isinstance(argument, str):
             self._bind_name(argument, _symbol('unknown'))
             return
         name = getattr(argument, 'id', None)
@@ -559,6 +579,123 @@ class _SourceVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+def _python27_executable():
+    """Find the target parser used for legacy NetEase Python-2 sources."""
+    return resolve_python27()
+
+
+def _validate_python27_source(path):
+    """Return ``(valid, diagnostic)`` for source rejected by Python 3 AST.
+
+    A Python-2 parse is deliberately a separate syntax gate.  The static
+    scanner still applies the token-level checks below, so accepting legacy
+    syntax does not disable import or dynamic-execution rules.
+    """
+    if sys.version_info[0] < 3:
+        return None, None
+    executable = _python27_executable()
+    if not executable:
+        return None, None
+    command = [executable, '-c',
+               "compile(open(__import__('sys').argv[1], 'rb').read(), "
+               "__import__('sys').argv[1], 'exec')", path]
+    try:
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = process.communicate()[1]
+    except (IOError, OSError):
+        return None, None
+    if process.returncode == 0:
+        return True, None
+    if not isinstance(output, str):
+        output = output.decode('utf-8', 'replace')
+    line_match = re.search(r'line\s+(\d+)', output)
+    line = int(line_match.group(1)) if line_match else 0
+    return False, (line, output.strip() or 'Python 2 syntax error')
+
+
+def _legacy_token_scan(source_text, display_path, local_modules):
+    """Apply conservative checks when Python-2 syntax has no Python-3 AST."""
+    issues = []
+    seen = set()
+
+    def issue(line, column, code, message):
+        key = (int(line or 0), code)
+        if key in seen:
+            return
+        seen.add(key)
+        issues.append(StaticIssue(
+            display_path, line, column, code, message))
+
+    # Imports are simple enough to classify without depending on the AST
+    # grammar.  Relative imports are project-local by definition.
+    for line_no, line in enumerate(source_text.splitlines(), 1):
+        import_match = re.match(r'^\s*import\s+(.+)$', line)
+        if import_match:
+            values = import_match.group(1).split(',')
+            for value in values:
+                module = re.split(r'\s+as\s+', value.strip(), 1)[0]
+                module = module.split('#', 1)[0].strip()
+                if not module:
+                    continue
+                if (_is_local_module(module, local_modules) or
+                        is_whitelisted_module(module)):
+                    continue
+                issue(line_no, line.find(module) + 1,
+                      'NETEASE_MODULE_NOT_WHITELISTED',
+                      'module %r is not in the NetEase whitelist or this source project' %
+                      module)
+        from_match = re.match(r'^\s*from\s+([^\s]+)\s+import\s+', line)
+        if from_match:
+            module = from_match.group(1)
+            if module.startswith('.'):
+                continue
+            if (_is_local_module(module, local_modules) or
+                    is_whitelisted_module(module)):
+                continue
+            issue(line_no, line.find(module) + 1,
+                  'NETEASE_MODULE_NOT_WHITELISTED',
+                  'module %r is not in the NetEase whitelist or this source project' %
+                  module)
+
+    try:
+        tokens = tokenize.generate_tokens(
+            io.StringIO(source_text).readline)
+    except (AttributeError, TypeError):
+        tokens = ()
+    try:
+        for item in tokens:
+            if item.type != token.NAME:
+                continue
+            name = item.string
+            if name == '__import__':
+                issue(item.start[0], item.start[1] + 1,
+                      'DYNAMIC_IMPORT_NOT_ALLOWED',
+                      '__import__ access is not allowed in source submitted for obfuscation')
+            elif name in _DYNAMIC_NAMES - frozenset(('__import__',)):
+                issue(item.start[0], item.start[1] + 1,
+                      'DYNAMIC_CODE_EXECUTION_NOT_ALLOWED',
+                      '%s is not allowed in source submitted for obfuscation' % name)
+            elif name in _DANGEROUS_DUNDERS or name in _CARRIER_NAMES:
+                issue(item.start[0], item.start[1] + 1,
+                      'SANDBOX_ESCAPE_PATTERN',
+                      'suspicious sandbox/introspection escape pattern: %s' % name)
+    except (tokenize.TokenError, IndentationError):
+        # Python 2 validation already accepted the source.  A tokenization
+        # edge case should not turn a valid legacy module into a syntax error.
+        pass
+
+    # Lightweight constant tracking for the common obfuscated-import idiom:
+    # getattr(__builtins__, '__imp' + 'ort__')('os').
+    for line_no, line in enumerate(source_text.splitlines(), 1):
+        compact = line.replace(' ', '').replace('\t', '')
+        if (('__imp' in compact and 'ort__' in compact) or
+                ('__builtins__' in compact and '__import__' in compact)):
+            issue(line_no, 1, 'DYNAMIC_IMPORT_NOT_ALLOWED',
+                  'obfuscated __import__ access is not allowed in source submitted for obfuscation')
+    return issues
+
+
 def _scan_file(path, root, local_modules, local_key=None):
     display_path = os.path.relpath(path, root).replace('\\', '/')
     try:
@@ -567,11 +704,33 @@ def _scan_file(path, root, local_modules, local_key=None):
         digest = hashlib.sha256(source).digest()
         if local_key is None:
             local_key = tuple(sorted(local_modules))
-        cache_key = (_normal_path(path), digest, RULESET_VERSION, local_key)
+        cache_key = (_normal_path(path), digest,
+                     RULESET_VERSION + ':' + SCANNER_RULESET_VERSION,
+                     local_key)
         cached = _SCAN_CACHE.get(cache_key)
         if cached is not None:
             return list(cached)
-        tree = ast.parse(source, python_compile_filename(path))
+        source_text = decode_source_bytes(source)
+        try:
+            tree = ast.parse(source_text, python_compile_filename(path))
+        except SyntaxError as python3_error:
+            # NetEase source is Python 2.7.  Python 3.13's AST rejects valid
+            # statements such as ``print value`` before any policy rule can
+            # run, so validate with the target parser and use token checks.
+            legacy_valid, legacy_error = _validate_python27_source(path)
+            if legacy_valid is True:
+                legacy_issues = _legacy_token_scan(
+                    source_text, display_path, local_modules)
+                if len(_SCAN_CACHE) >= _SCAN_CACHE_LIMIT:
+                    _SCAN_CACHE.clear()
+                _SCAN_CACHE[cache_key] = tuple(legacy_issues)
+                return legacy_issues
+            if legacy_valid is False and legacy_error is not None:
+                line, message = legacy_error
+                issues = [StaticIssue(
+                    display_path, line, 0, 'SOURCE_SYNTAX_ERROR', message)]
+                return issues
+            raise python3_error
     except (IOError, OSError) as error:
         issues = [StaticIssue(
             display_path, 0, 0, 'SOURCE_READ_ERROR', str(error))]
@@ -582,7 +741,7 @@ def _scan_file(path, root, local_modules, local_key=None):
             getattr(error, 'offset', 0), 'SOURCE_SYNTAX_ERROR',
             getattr(error, 'msg', str(error)))]
         return issues
-    if not any(token in source for token in _FAST_SKIP_TOKENS):
+    if not any(token in source_text for token in _FAST_SKIP_TOKENS):
         if len(_SCAN_CACHE) >= _SCAN_CACHE_LIMIT:
             _SCAN_CACHE.clear()
         _SCAN_CACHE[cache_key] = ()
@@ -616,4 +775,4 @@ def enforce_source_compliance(source_path, folder=None, excluded_roots=None):
     report = scan_source(source_path, folder, excluded_roots)
     if not report.valid:
         raise StaticCheckFailure(report)
-    return report
+    return report\n

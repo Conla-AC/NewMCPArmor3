@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Instruction-level bytecode decoding and transformations."""
-from __future__ import absolute_import, print_function
 
-import opcode
+
+from MCP_Armor_Src.core import py27_opcode as opcode
+from MCP_Armor_Src.utils.encoding import byte_char, byte_value
 import os
 import random
 import types
@@ -32,11 +33,11 @@ from MCP_Armor_Src.core.constants import (
 
 
 def read_oparg(code_bytes, pos):
-    return ord(code_bytes[pos + 1]) | (ord(code_bytes[pos + 2]) << 8)
+    return byte_value(code_bytes[pos + 1]) | (byte_value(code_bytes[pos + 2]) << 8)
 
 
 def write_oparg(value):
-    return chr(value & 255) + chr((value >> 8) & 255)
+    return byte_char(value & 255) + byte_char((value >> 8) & 255)
 
 
 def force_changed_shuffle(values):
@@ -52,7 +53,7 @@ def shuffle_index_pool(items, start=0):
     mapping = dict((idx, idx) for idx in range(len(items)))
     if len(items) - start < 2:
         return items, mapping
-    old_positions = range(start, len(items))
+    old_positions = list(range(start, len(items)))
     new_positions = force_changed_shuffle(old_positions)
     original = list(items)
     for old_idx, new_idx in zip(old_positions, new_positions):
@@ -92,17 +93,17 @@ def safe_varname_shuffle_start(co):
 
 
 def remap_pool_index_opargs(code_bytes, const_map, name_map, fast_map):
-    if EXTENDED_ARG is not None and chr(EXTENDED_ARG) in code_bytes:
+    if EXTENDED_ARG is not None and byte_char(EXTENDED_ARG) in code_bytes:
         return code_bytes
     out = []
     pos = 0
     size = len(code_bytes)
     while pos < size:
-        opv = ord(code_bytes[pos])
-        out.append(chr(opv))
+        opv = byte_value(code_bytes[pos])
+        out.append(byte_char(opv))
         pos += 1
         if opv >= HAVE_ARGUMENT and pos + 1 < size:
-            arg = ord(code_bytes[pos]) | (ord(code_bytes[pos + 1]) << 8)
+            arg = byte_value(code_bytes[pos]) | (byte_value(code_bytes[pos + 1]) << 8)
             if opv == LOAD_CONST and arg in const_map:
                 arg = const_map[arg]
             elif opv in NAME_INDEX_OPS and arg in name_map:
@@ -111,11 +112,11 @@ def remap_pool_index_opargs(code_bytes, const_map, name_map, fast_map):
                 arg = fast_map[arg]
             out.append(write_oparg(arg))
             pos += 2
-    return ''.join(out)
+    return b''.join(out)
 
 
 def apply_index_pool_shuffle(co, code_bytes, consts, names, varnames):
-    if EXTENDED_ARG is not None and chr(EXTENDED_ARG) in code_bytes:
+    if EXTENDED_ARG is not None and byte_char(EXTENDED_ARG) in code_bytes:
         return consts, names, varnames, code_bytes
     consts, const_map = shuffle_index_pool(consts, 1)
     names, name_map = shuffle_index_pool(names, 0)
@@ -132,7 +133,7 @@ def split_bytecode_units(code_bytes):
     pos = 0
     size = len(code_bytes)
     while pos < size:
-        opv = ord(code_bytes[pos])
+        opv = byte_value(code_bytes[pos])
         length = 3 if opv >= HAVE_ARGUMENT and pos + 2 < size else 1
         units.append((pos, code_bytes[pos:pos + length]))
         pos += length
@@ -159,17 +160,17 @@ def make_split_gate_payload(index, bad_units, nop_bloat, taunt_text):
     payload = []
     small = max(0, min(12, nop_bloat))
     for _ in range(small):
-        payload.append(chr(NOP))
+        payload.append(byte_char(NOP))
     if taunt_text and index % 3 == 0:
-        payload.append(chr(LOAD_CONST))
+        payload.append(byte_char(LOAD_CONST))
         payload.append(write_oparg(0))
-        payload.append(chr(POP_TOP))
+        payload.append(byte_char(POP_TOP))
     bad_ops = [255, 254, 251, 250, 249, 248, 247]
     for _ in range(max(0, min(8, bad_units))):
-        payload.append(chr(random.choice(bad_ops)))
-        payload.append(chr(random.randint(0, 255)))
-        payload.append(chr(random.randint(0, 255)))
-    return ''.join(payload)
+        payload.append(byte_char(random.choice(bad_ops)))
+        payload.append(byte_char(random.randint(0, 255)))
+        payload.append(byte_char(random.randint(0, 255)))
+    return b''.join(payload)
 
 
 def is_loop_shadow_op(opv):
@@ -196,7 +197,7 @@ def bytecode_split_gates(code_bytes, interval=18, bad_units=2, nop_bloat=2, taun
         selected.add(old_pos)
     if shadow_loops:
         for idx, (old_pos, unit) in enumerate(units):
-            if idx + 2 < len(units) and is_loop_shadow_op(ord(unit[0])):
+            if idx + 2 < len(units) and is_loop_shadow_op(byte_value(unit[0])):
                 selected.add(old_pos)
     inserts = {}
     added = 0
@@ -204,7 +205,7 @@ def bytecode_split_gates(code_bytes, interval=18, bad_units=2, nop_bloat=2, taun
         if old_pos in selected:
             payload = make_split_gate_payload(idx, bad_units, nop_bloat, taunt_text)
             if payload and len(payload) <= 65535:
-                gate = chr(JUMP_FORWARD) + write_oparg(len(payload)) + payload
+                gate = byte_char(JUMP_FORWARD) + write_oparg(len(payload)) + payload
                 inserts[old_pos] = gate
                 added += len(gate)
     if not inserts:
@@ -224,7 +225,7 @@ def bytecode_split_gates(code_bytes, interval=18, bad_units=2, nop_bloat=2, taun
     for old_pos, unit in units:
         if old_pos in inserts:
             out.append(inserts[old_pos])
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
             if is_relative_jump_op(opv):
@@ -234,19 +235,19 @@ def bytecode_split_gates(code_bytes, interval=18, bad_units=2, nop_bloat=2, taun
                 if mapped_target is not None:
                     new_arg = mapped_target - mapped_from
                     if 0 <= new_arg <= 65535:
-                        unit = unit[0] + write_oparg(new_arg)
+                        unit = byte_char(byte_value(unit[0])) + write_oparg(new_arg)
                     else:
                         return code_bytes
             elif is_absolute_jump_op(opv):
                 mapped_target = new_pos.get(arg, new_end if arg == old_end else None)
                 if mapped_target is not None and 0 <= mapped_target <= 65535:
-                    unit = unit[0] + write_oparg(mapped_target)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(mapped_target)
                 elif mapped_target is not None:
                     return code_bytes
         out.append(unit)
-    transformed = ''.join(out)
+    transformed = b''.join(out)
     try:
-        from MCP_Armor_Src.bytecode_obf.cfg.builder import build_control_flow_graph
+        from MCP_Armor_Src.bytecode_obf.bytecode_flow.builder import build_control_flow_graph
         graph = build_control_flow_graph(transformed)
     except (IndexError, KeyError, TypeError, ValueError):
         return code_bytes
@@ -256,6 +257,18 @@ def bytecode_split_gates(code_bytes, interval=18, bad_units=2, nop_bloat=2, taun
 
 
 def bytecode_reorder_linear_blocks(code_bytes, min_units=3, max_units=8, limit=3):
+    """Deprecated unsafe linear-unit permutation.
+
+    The legacy layout emitted ``jump A; B; jump A; A`` without an ``A -> B``
+    continuation.  That made B unreachable and silently removed part of an
+    expression stack (for example the owner of ``BINARY_SUBSCR``).  Physical
+    relocation is now exclusively handled by ``apply_basic_block_shuffle``,
+    which rebuilds CFG targets and verifies stack depths after rendering.
+    """
+    return code_bytes
+
+    # Retained below as historical reference for old configuration files;
+    # execution intentionally never enters this implementation.
     if JUMP_FORWARD is None or JUMP_ABSOLUTE is None:
         return code_bytes
     if not code_bytes or len(code_bytes) > 6000:
@@ -263,11 +276,11 @@ def bytecode_reorder_linear_blocks(code_bytes, min_units=3, max_units=8, limit=3
     units = split_bytecode_units(code_bytes)
     if len(units) < (min_units * 2 + 2):
         return code_bytes
-    if any(is_control_flow_op(ord(unit[1][0])) and ord(unit[1][0]) != RETURN_VALUE for unit in units):
+    if any(is_control_flow_op(byte_value(unit[1][0])) and byte_value(unit[1][0]) != RETURN_VALUE for unit in units):
         return code_bytes
-    if sum(1 for unit in units if ord(unit[1][0]) == RETURN_VALUE) != 1:
+    if sum(1 for unit in units if byte_value(unit[1][0]) == RETURN_VALUE) != 1:
         return code_bytes
-    if ord(units[-1][1][0]) != RETURN_VALUE:
+    if byte_value(units[-1][1][0]) != RETURN_VALUE:
         return code_bytes
     body_units = units[:-1]
     return_unit = units[-1][1]
@@ -278,7 +291,7 @@ def bytecode_reorder_linear_blocks(code_bytes, min_units=3, max_units=8, limit=3
     max_units = max(min_units, max_units)
 
     def unit_has_control(unit):
-        return is_control_flow_op(ord(unit[0])) or ord(unit[0]) == EXTENDED_ARG
+        return is_control_flow_op(byte_value(unit[0])) or byte_value(unit[0]) == EXTENDED_ARG
 
     while idx < len(body_units):
         if changed >= limit or idx + (min_units * 2) >= len(body_units):
@@ -296,8 +309,8 @@ def bytecode_reorder_linear_blocks(code_bytes, min_units=3, max_units=8, limit=3
             out.append(body_units[idx][1])
             idx += 1
             continue
-        a = ''.join(block_a)
-        b = ''.join(block_b)
+        a = b''.join(block_a)
+        b = b''.join(block_b)
         if len(a) > 65535 or len(b) + 3 > 65535:
             out.append(units[idx][1])
             idx += 1
@@ -305,14 +318,14 @@ def bytecode_reorder_linear_blocks(code_bytes, min_units=3, max_units=8, limit=3
         base = sum(len(x) for x in out)
         a_start = base + 3 + len(b) + 3
         entry = len(b) + 3
-        out.append(chr(JUMP_FORWARD) + write_oparg(entry))
+        out.append(byte_char(JUMP_FORWARD) + write_oparg(entry))
         out.append(b)
-        out.append(chr(JUMP_ABSOLUTE) + write_oparg(a_start))
+        out.append(byte_char(JUMP_ABSOLUTE) + write_oparg(a_start))
         out.append(a)
         changed += 1
         idx += a_len + b_len
     out.append(return_unit)
-    return ''.join(out)
+    return b''.join(out)
 
 
 def build_legal_junk_payload(width=3, true_const_index=0, junk_local_index=None, include_oparg_poison=False):
@@ -320,29 +333,29 @@ def build_legal_junk_payload(width=3, true_const_index=0, junk_local_index=None,
     for _ in range(max(1, width)):
         choice = random.randint(0, 5)
         if choice == 0:
-            payload.append(chr(NOP))
+            payload.append(byte_char(NOP))
         elif choice == 1:
-            payload.append(chr(LOAD_CONST))
+            payload.append(byte_char(LOAD_CONST))
             payload.append(write_oparg(true_const_index))
-            payload.append(chr(POP_TOP))
+            payload.append(byte_char(POP_TOP))
         elif choice == 2 and junk_local_index is not None and STORE_FAST is not None and DELETE_FAST is not None:
-            payload.append(chr(LOAD_CONST))
+            payload.append(byte_char(LOAD_CONST))
             payload.append(write_oparg(true_const_index))
-            payload.append(chr(STORE_FAST))
+            payload.append(byte_char(STORE_FAST))
             payload.append(write_oparg(junk_local_index))
-            payload.append(chr(DELETE_FAST))
+            payload.append(byte_char(DELETE_FAST))
             payload.append(write_oparg(junk_local_index))
         elif choice == 3 and JUMP_FORWARD is not None:
-            payload.append(chr(JUMP_FORWARD))
+            payload.append(byte_char(JUMP_FORWARD))
             payload.append(write_oparg(0))
         elif choice == 4 and include_oparg_poison:
-            payload.append(chr(LOAD_CONST))
+            payload.append(byte_char(LOAD_CONST))
             payload.append(write_oparg(65535))
         else:
-            payload.append(chr(LOAD_CONST))
+            payload.append(byte_char(LOAD_CONST))
             payload.append(write_oparg(true_const_index))
-            payload.append(chr(POP_TOP))
-    return ''.join(payload)
+            payload.append(byte_char(POP_TOP))
+    return b''.join(payload)
 
 
 def build_safe_jump_block(width=3, true_const_index=0, junk_local_index=None, include_oparg_poison=False):
@@ -351,7 +364,7 @@ def build_safe_jump_block(width=3, true_const_index=0, junk_local_index=None, in
     payload = build_legal_junk_payload(width, true_const_index, junk_local_index, include_oparg_poison)
     if not payload or len(payload) > 65535:
         return ''
-    return chr(JUMP_FORWARD) + write_oparg(len(payload)) + payload
+    return byte_char(JUMP_FORWARD) + write_oparg(len(payload)) + payload
 
 
 def build_taken_jump_poison_payload(units=6):
@@ -386,8 +399,8 @@ def build_taken_jump_poison_payload(units=6):
         else:
             opv = random.choice(unknown_ops)
             arg = ((index + 1) * random.randint(257, 4095)) & 65535
-        rows.append(chr(opv) + write_oparg(arg))
-    return ''.join(rows)
+        rows.append(byte_char(opv) + write_oparg(arg))
+    return b''.join(rows)
 
 
 def bytecode_taken_jump_poison(code_bytes, interval=20, units=6, limit=6,
@@ -405,7 +418,7 @@ def bytecode_taken_jump_poison(code_bytes, interval=20, units=6, limit=6,
         if len(selected) >= limit:
             break
         old_pos, unit = units_list[index]
-        if ord(unit[0]) != EXTENDED_ARG:
+        if byte_value(unit[0]) != EXTENDED_ARG:
             selected.append(old_pos)
     if not selected:
         return code_bytes
@@ -413,14 +426,14 @@ def bytecode_taken_jump_poison(code_bytes, interval=20, units=6, limit=6,
     payloads = dict((pos, build_taken_jump_poison_payload(units))
                     for pos in selected)
     insert_lengths = dict((pos, 6 + len(payload))
-                          for pos, payload in payloads.items())
+                          for pos, payload in list(payloads.items()))
     old_end = len(code_bytes)
     if old_end + sum(insert_lengths.values()) > 65535:
         return code_bytes
 
     def map_offset(offset):
         extra = 0
-        for insert_pos, insert_len in insert_lengths.items():
+        for insert_pos, insert_len in list(insert_lengths.items()):
             if insert_pos < offset:
                 extra += insert_len
         return offset + extra
@@ -436,13 +449,13 @@ def bytecode_taken_jump_poison(code_bytes, interval=20, units=6, limit=6,
         if old_pos in payloads:
             payload = payloads[old_pos]
             real_target = new_pos[old_pos] + insert_lengths[old_pos]
-            gate = ''.join((
-                chr(LOAD_CONST), write_oparg(true_const_index),
-                chr(POP_JUMP_IF_TRUE), write_oparg(real_target),
+            gate = b''.join((
+                byte_char(LOAD_CONST), write_oparg(true_const_index),
+                byte_char(POP_JUMP_IF_TRUE), write_oparg(real_target),
                 payload,
             ))
             out.append(gate)
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
             if is_relative_jump_op(opv):
@@ -454,14 +467,14 @@ def bytecode_taken_jump_poison(code_bytes, interval=20, units=6, limit=6,
                 if mapped_target is not None:
                     new_arg = mapped_target - mapped_from
                     if 0 <= new_arg <= 65535:
-                        unit = unit[0] + write_oparg(new_arg)
+                        unit = byte_char(byte_value(unit[0])) + write_oparg(new_arg)
             elif is_absolute_jump_op(opv):
                 mapped_target = (map_offset(arg)
                                  if 0 <= arg <= old_end else None)
                 if mapped_target is not None and mapped_target <= 65535:
-                    unit = unit[0] + write_oparg(mapped_target)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(mapped_target)
         out.append(unit)
-    return ''.join(out)
+    return b''.join(out)
 
 
 def build_exception_decoy_block(true_const_index=0):
@@ -470,21 +483,21 @@ def build_exception_decoy_block(true_const_index=0):
     end_finally = opcode.opmap.get('END_FINALLY')
     if JUMP_FORWARD is None or setup_finally is None or pop_block is None or end_finally is None:
         return ''
-    body = ''.join([
-        chr(LOAD_CONST), write_oparg(true_const_index),
-        chr(POP_TOP),
-        chr(pop_block),
+    body = b''.join([
+        byte_char(LOAD_CONST), write_oparg(true_const_index),
+        byte_char(POP_TOP),
+        byte_char(pop_block),
     ])
-    handler = ''.join([
-        chr(LOAD_CONST), write_oparg(true_const_index),
-        chr(POP_TOP),
-        chr(end_finally),
+    handler = b''.join([
+        byte_char(LOAD_CONST), write_oparg(true_const_index),
+        byte_char(POP_TOP),
+        byte_char(end_finally),
     ])
-    body = body + chr(JUMP_FORWARD) + write_oparg(len(handler))
-    protected = chr(setup_finally) + write_oparg(len(body)) + body + handler
+    body = body + byte_char(JUMP_FORWARD) + write_oparg(len(handler))
+    protected = byte_char(setup_finally) + write_oparg(len(body)) + body + handler
     if len(protected) > 65535:
         return ''
-    return chr(JUMP_FORWARD) + write_oparg(len(protected)) + protected
+    return byte_char(JUMP_FORWARD) + write_oparg(len(protected)) + protected
 
 
 def prepend_exception_decoys(code_bytes, count=0, true_const_index=0):
@@ -495,7 +508,7 @@ def prepend_exception_decoys(code_bytes, count=0, true_const_index=0):
         block = build_exception_decoy_block(true_const_index)
         if block:
             blocks.append(block)
-    payload = ''.join(blocks)
+    payload = b''.join(blocks)
     if not payload:
         return code_bytes
     return insert_bytecode_blocks(code_bytes, {0: payload})
@@ -505,7 +518,7 @@ def prepend_legal_entry_noise(code_bytes, count=0, true_const_index=0, junk_loca
     if count <= 0:
         return code_bytes
     count = max(0, min(64, int(count)))
-    block = chr(NOP) * count
+    block = byte_char(NOP) * count
     if not block:
         return code_bytes
     return insert_bytecode_blocks(code_bytes, {0: block})
@@ -522,7 +535,7 @@ def bytecode_safe_dead_blocks(code_bytes, interval=20, width=4, limit=6, true_co
     for idx in range(interval, len(units) - 2, max(1, interval)):
         if len(selected) >= limit:
             break
-        if ord(units[idx][1][0]) != EXTENDED_ARG:
+        if byte_value(units[idx][1][0]) != EXTENDED_ARG:
             selected.append(units[idx][0])
     if not selected:
         return code_bytes
@@ -548,7 +561,7 @@ def bytecode_opaque_predicates(code_bytes, interval=28, width=3, limit=4,
         if made >= limit:
             break
         old_pos = units[idx][0]
-        if ord(units[idx][1][0]) == EXTENDED_ARG:
+        if byte_value(units[idx][1][0]) == EXTENDED_ARG:
             continue
         false_payload = build_legal_junk_payload(width, true_const_index, junk_local_index, False)
         true_payload = build_legal_junk_payload(max(1, width // 2), true_const_index, junk_local_index, False)
@@ -573,14 +586,14 @@ def bytecode_opaque_predicates(code_bytes, interval=28, width=3, limit=4,
             predicate_local_index = None
     predicate_prefix_len = 12 if predicate_local_index is not None else 6
     insert_lengths = {}
-    for old_pos, spec in block_specs.items():
+    for old_pos, spec in list(block_specs.items()):
         true_payload, false_payload = spec
         insert_lengths[old_pos] = predicate_prefix_len + len(true_payload) + 3 + len(false_payload)
     old_end = len(code_bytes)
 
     def map_offset(offset):
         extra = 0
-        for insert_pos, insert_len in insert_lengths.items():
+        for insert_pos, insert_len in list(insert_lengths.items()):
             if insert_pos < offset:
                 extra += insert_len
         return offset + extra
@@ -600,23 +613,23 @@ def bytecode_opaque_predicates(code_bytes, interval=28, width=3, limit=4,
             false_start = block_start + predicate_prefix_len + len(true_payload) + 3
             block = []
             if predicate_local_index is not None:
-                block.append(chr(LOAD_FAST))
+                block.append(byte_char(LOAD_FAST))
                 block.append(write_oparg(predicate_local_index))
-                block.append(chr(LOAD_FAST))
+                block.append(byte_char(LOAD_FAST))
                 block.append(write_oparg(predicate_local_index))
-                block.append(chr(COMPARE_OP))
+                block.append(byte_char(COMPARE_OP))
                 block.append(write_oparg(compare_is))
             else:
-                block.append(chr(LOAD_CONST))
+                block.append(byte_char(LOAD_CONST))
                 block.append(write_oparg(true_const_index))
-            block.append(chr(POP_JUMP_IF_FALSE))
+            block.append(byte_char(POP_JUMP_IF_FALSE))
             block.append(write_oparg(false_start))
             block.append(true_payload)
-            block.append(chr(JUMP_FORWARD))
+            block.append(byte_char(JUMP_FORWARD))
             block.append(write_oparg(len(false_payload)))
             block.append(false_payload)
-            out.append(''.join(block))
-        opv = ord(unit[0])
+            out.append(b''.join(block))
+        opv = byte_value(unit[0])
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
             if is_relative_jump_op(opv):
@@ -626,13 +639,13 @@ def bytecode_opaque_predicates(code_bytes, interval=28, width=3, limit=4,
                 if mapped_target is not None:
                     new_arg = mapped_target - mapped_from
                     if 0 <= new_arg <= 65535:
-                        unit = unit[0] + write_oparg(new_arg)
+                        unit = byte_char(byte_value(unit[0])) + write_oparg(new_arg)
             elif is_absolute_jump_op(opv):
                 mapped_target = map_offset(arg) if 0 <= arg <= old_end else None
                 if mapped_target is not None and 0 <= mapped_target <= 65535:
-                    unit = unit[0] + write_oparg(mapped_target)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(mapped_target)
         out.append(unit)
-    return ''.join(out)
+    return b''.join(out)
 
 
 def can_apply_bytecode_opaque_predicates(co, code_bytes):
@@ -645,25 +658,25 @@ def can_apply_bytecode_opaque_predicates(co, code_bytes):
         return False
     return_count = 0
     for _old_pos, unit in units:
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if opv == RETURN_VALUE:
             return_count += 1
             continue
         if is_control_flow_op(opv):
             return False
-    return return_count == 1 and ord(units[-1][1][0]) == RETURN_VALUE
+    return return_count == 1 and byte_value(units[-1][1][0]) == RETURN_VALUE
 
 
 def insert_bytecode_blocks(code_bytes, inserts):
     if not inserts:
         return code_bytes
     units = split_bytecode_units(code_bytes)
-    insert_lengths = dict((old_pos, len(block)) for old_pos, block in inserts.items())
+    insert_lengths = dict((old_pos, len(block)) for old_pos, block in list(inserts.items()))
     old_end = len(code_bytes)
 
     def map_offset(offset):
         extra = 0
-        for insert_pos, insert_len in insert_lengths.items():
+        for insert_pos, insert_len in list(insert_lengths.items()):
             if insert_pos < offset:
                 extra += insert_len
         return offset + extra
@@ -679,7 +692,7 @@ def insert_bytecode_blocks(code_bytes, inserts):
     for old_pos, unit in units:
         if old_pos in inserts:
             out.append(inserts[old_pos])
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
             if is_relative_jump_op(opv):
@@ -689,13 +702,13 @@ def insert_bytecode_blocks(code_bytes, inserts):
                 if mapped_target is not None:
                     new_arg = mapped_target - mapped_from
                     if 0 <= new_arg <= 65535:
-                        unit = unit[0] + write_oparg(new_arg)
+                        unit = byte_char(byte_value(unit[0])) + write_oparg(new_arg)
             elif is_absolute_jump_op(opv):
                 mapped_target = map_offset(arg) if 0 <= arg <= old_end else None
                 if mapped_target is not None and 0 <= mapped_target <= 65535:
-                    unit = unit[0] + write_oparg(mapped_target)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(mapped_target)
         out.append(unit)
-    return ''.join(out)
+    return b''.join(out)
 
 
 def bytecode_stack_equivalent_noise(code_bytes, interval=18, limit=6, true_const_index=0):
@@ -703,20 +716,20 @@ def bytecode_stack_equivalent_noise(code_bytes, interval=18, limit=6, true_const
     limit = max(0, min(64, int(limit or 0)))
     if limit <= 0 or true_const_index < 0 or true_const_index > 65535:
         return code_bytes
-    if EXTENDED_ARG is not None and chr(EXTENDED_ARG) in code_bytes:
+    if EXTENDED_ARG is not None and byte_char(EXTENDED_ARG) in code_bytes:
         return code_bytes
     units = split_bytecode_units(code_bytes)
     if len(units) < interval + 4:
         return code_bytes
-    payload = chr(LOAD_CONST) + write_oparg(true_const_index) + chr(POP_TOP)
+    payload = byte_char(LOAD_CONST) + write_oparg(true_const_index) + byte_char(POP_TOP)
     inserts = {}
     made = 0
     for idx in range(interval, len(units) - 2, interval):
         if made >= limit:
             break
         old_pos, unit = units[idx]
-        prev_op = ord(units[idx - 1][1][0])
-        opv = ord(unit[0])
+        prev_op = byte_value(units[idx - 1][1][0])
+        opv = byte_value(unit[0])
         if old_pos <= 0 or opv == EXTENDED_ARG or prev_op == EXTENDED_ARG:
             continue
         if is_control_flow_op(opv) or is_control_flow_op(prev_op):
@@ -730,7 +743,7 @@ def bytecode_conditional_jump_inversion(code_bytes, limit=4):
     limit = max(0, min(64, int(limit or 0)))
     if limit <= 0 or JUMP_ABSOLUTE is None or POP_JUMP_IF_FALSE is None or POP_JUMP_IF_TRUE is None:
         return code_bytes
-    if EXTENDED_ARG is not None and chr(EXTENDED_ARG) in code_bytes:
+    if EXTENDED_ARG is not None and byte_char(EXTENDED_ARG) in code_bytes:
         return code_bytes
     units = split_bytecode_units(code_bytes)
     old_end = len(code_bytes)
@@ -740,7 +753,7 @@ def bytecode_conditional_jump_inversion(code_bytes, limit=4):
     for idx, (old_pos, unit) in enumerate(units):
         if idx + 1 >= len(units) or len(unit) != 3:
             continue
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if opv not in (POP_JUMP_IF_FALSE, POP_JUMP_IF_TRUE):
             continue
         target = read_oparg(unit, 0)
@@ -769,7 +782,7 @@ def bytecode_conditional_jump_inversion(code_bytes, limit=4):
 
     out = []
     for old_pos, unit in units:
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if old_pos in selected:
             old_target = read_oparg(unit, 0)
             mapped_target = map_target(old_target)
@@ -777,8 +790,8 @@ def bytecode_conditional_jump_inversion(code_bytes, limit=4):
             if mapped_target is None or mapped_fallthrough is None:
                 return code_bytes
             inverted = POP_JUMP_IF_TRUE if opv == POP_JUMP_IF_FALSE else POP_JUMP_IF_FALSE
-            out.append(chr(inverted) + write_oparg(mapped_fallthrough))
-            out.append(chr(JUMP_ABSOLUTE) + write_oparg(mapped_target))
+            out.append(byte_char(inverted) + write_oparg(mapped_fallthrough))
+            out.append(byte_char(JUMP_ABSOLUTE) + write_oparg(mapped_target))
             continue
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
@@ -789,20 +802,20 @@ def bytecode_conditional_jump_inversion(code_bytes, limit=4):
                     new_arg = mapped_target - (new_pos[old_pos] + 3)
                     if not (0 <= new_arg <= 65535):
                         return code_bytes
-                    unit = unit[0] + write_oparg(new_arg)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(new_arg)
             elif is_absolute_jump_op(opv):
                 mapped_target = map_target(arg)
                 if mapped_target is not None:
-                    unit = unit[0] + write_oparg(mapped_target)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(mapped_target)
         out.append(unit)
-    return ''.join(out)
+    return b''.join(out)
 
 
 def bytecode_jump_trampoline_chains(code_bytes, limit=4, candidate_end=None):
     limit = max(0, min(64, int(limit or 0)))
-    if limit <= 0 or JUMP_ABSOLUTE is None:
+    if limit <= 0 or JUMP_ABSOLUTE is None or JUMP_FORWARD is None:
         return code_bytes
-    if EXTENDED_ARG is not None and chr(EXTENDED_ARG) in code_bytes:
+    if EXTENDED_ARG is not None and byte_char(EXTENDED_ARG) in code_bytes:
         return code_bytes
     units = split_bytecode_units(code_bytes)
     old_end = len(code_bytes)
@@ -817,7 +830,7 @@ def bytecode_jump_trampoline_chains(code_bytes, limit=4, candidate_end=None):
     for old_pos, unit in units:
         if old_pos <= 3 or old_pos >= candidate_end or len(unit) != 3:
             continue
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if opv not in (JUMP_ABSOLUTE, JUMP_FORWARD) and opv not in conditional_ops:
             continue
         arg = read_oparg(unit, 0)
@@ -832,7 +845,7 @@ def bytecode_jump_trampoline_chains(code_bytes, limit=4, candidate_end=None):
         candidates = sorted(random.sample(candidates, limit))
     selected = set(candidates)
     conditional_positions = dict(
-        (old_pos, ord(unit[0]) in conditional_ops)
+        (old_pos, byte_value(unit[0]) in conditional_ops)
         for old_pos, unit in units if old_pos in selected)
     new_pos = {}
     cursor = 0
@@ -853,7 +866,7 @@ def bytecode_jump_trampoline_chains(code_bytes, limit=4, candidate_end=None):
 
     out = []
     for old_pos, unit in units:
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if old_pos in selected:
             arg = read_oparg(unit, 0)
             is_conditional = opv in conditional_ops
@@ -868,11 +881,15 @@ def bytecode_jump_trampoline_chains(code_bytes, limit=4, candidate_end=None):
                 # Preserve the original taken/not-taken edge and only route
                 # the taken branch through the second-stage jump. The
                 # fallthrough skip keeps the two paths separate.
-                out.append(chr(opv) + write_oparg(trampoline))
-                out.append(chr(JUMP_FORWARD) + write_oparg(3))
+                out.append(byte_char(opv) + write_oparg(trampoline))
+                out.append(byte_char(JUMP_FORWARD) + write_oparg(3))
             else:
-                out.append(chr(JUMP_ABSOLUTE) + write_oparg(trampoline))
-            out.append(chr(JUMP_ABSOLUTE) + write_oparg(mapped_target))
+                # Map the goto-like first hop to CPython's forward jump.  A
+                # zero-distance JUMP_FORWARD lands on the adjacent absolute
+                # target hop, preserving semantics while exposing the same
+                # two-stage shape as the reference Flow transformer.
+                out.append(byte_char(JUMP_FORWARD) + write_oparg(0))
+            out.append(byte_char(JUMP_ABSOLUTE) + write_oparg(mapped_target))
             continue
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
@@ -883,15 +900,15 @@ def bytecode_jump_trampoline_chains(code_bytes, limit=4, candidate_end=None):
                     new_arg = mapped_target - (new_pos[old_pos] + 3)
                     if not (0 <= new_arg <= 65535):
                         return code_bytes
-                    unit = unit[0] + write_oparg(new_arg)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(new_arg)
             elif is_absolute_jump_op(opv):
                 mapped_target = map_target(arg)
                 if mapped_target is not None:
-                    unit = unit[0] + write_oparg(mapped_target)
+                    unit = byte_char(byte_value(unit[0])) + write_oparg(mapped_target)
         out.append(unit)
-    transformed = ''.join(out)
+    transformed = b''.join(out)
     try:
-        from MCP_Armor_Src.bytecode_obf.cfg.builder import build_control_flow_graph
+        from MCP_Armor_Src.bytecode_obf.bytecode_flow.builder import build_control_flow_graph
         graph = build_control_flow_graph(transformed)
     except (IndexError, KeyError, TypeError, ValueError):
         return code_bytes
@@ -904,6 +921,11 @@ def bytecode_strategy_variant(co, depth=0, seed=0, variant_count=4):
     variant_count = max(1, int(variant_count or 1))
     token = repr((getattr(co, 'co_name', ''), os.path.basename(getattr(co, 'co_filename', '')),
                   int(depth), len(getattr(co, 'co_code', '')), int(seed or 0)))
+    # Python 2's zlib.crc32 requires a byte string.  Code metadata may be a
+    # unicode value (especially after filename/name poisoning), so normalize
+    # the deterministic strategy token explicitly on both runtimes.
+    if not isinstance(token, bytes):
+        token = token.encode('utf-8')
     return (zlib.crc32(token) & 0xffffffff) % variant_count
 
 
@@ -916,7 +938,7 @@ def bytecode_has_exception_control_flow(code_bytes):
     if not risky:
         return False
     for _pos, unit in split_bytecode_units(code_bytes):
-        if unit and ord(unit[0]) in risky:
+        if unit and byte_value(unit[0]) in risky:
             return True
     return False
 
@@ -924,7 +946,7 @@ def bytecode_has_exception_control_flow(code_bytes):
 def is_safe_delayed_const(value, depth=0):
     if isinstance(value, types.CodeType) or value is None or value is True or value is False:
         return False
-    if isinstance(value, (int, long, float, complex, str, unicode)):
+    if isinstance(value, (int, float, complex, str)):
         return True
     if isinstance(value, tuple) and depth < 2 and len(value) <= 12:
         return all(is_safe_delayed_const(item, depth + 1) for item in value)
@@ -935,7 +957,7 @@ def bytecode_delayed_constant_access(code_bytes, consts, limit=3, candidate_end=
     limit = max(0, min(32, int(limit or 0)))
     if limit <= 0 or BINARY_SUBSCR is None:
         return code_bytes, consts, 0
-    if EXTENDED_ARG is not None and chr(EXTENDED_ARG) in code_bytes:
+    if EXTENDED_ARG is not None and byte_char(EXTENDED_ARG) in code_bytes:
         return code_bytes, consts, 0
     units = split_bytecode_units(code_bytes)
     old_end = len(code_bytes)
@@ -944,7 +966,7 @@ def bytecode_delayed_constant_access(code_bytes, consts, limit=3, candidate_end=
     candidate_end = max(0, min(old_end, int(candidate_end)))
     candidates = []
     for old_pos, unit in units:
-        if old_pos < 12 or old_pos >= candidate_end or len(unit) != 3 or ord(unit[0]) != LOAD_CONST:
+        if old_pos < 12 or old_pos >= candidate_end or len(unit) != 3 or byte_value(unit[0]) != LOAD_CONST:
             continue
         const_index = read_oparg(unit, 0)
         if const_index < 0 or const_index >= len(consts):
@@ -989,12 +1011,12 @@ def bytecode_delayed_constant_access(code_bytes, consts, limit=3, candidate_end=
 
     out = []
     for old_pos, unit in units:
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if old_pos in selected:
             wrapper_index = wrapper_indexes[selected[old_pos]]
-            out.append(chr(LOAD_CONST) + write_oparg(wrapper_index))
-            out.append(chr(LOAD_CONST) + write_oparg(zero_index))
-            out.append(chr(BINARY_SUBSCR))
+            out.append(byte_char(LOAD_CONST) + write_oparg(wrapper_index))
+            out.append(byte_char(LOAD_CONST) + write_oparg(zero_index))
+            out.append(byte_char(BINARY_SUBSCR))
             continue
         if len(unit) == 3 and opv != EXTENDED_ARG:
             arg = read_oparg(unit, 0)
@@ -1011,7 +1033,7 @@ def bytecode_delayed_constant_access(code_bytes, consts, limit=3, candidate_end=
                 if mapped_target is not None:
                     unit = unit[0] + write_oparg(mapped_target)
         out.append(unit)
-    return ''.join(out), new_consts, len(selected)
+    return b''.join(out), new_consts, len(selected)
 
 
 def bytecode_extended_arg_prefixes(code_bytes, interval=11, limit=6):
@@ -1022,13 +1044,13 @@ def bytecode_extended_arg_prefixes(code_bytes, interval=11, limit=6):
     units = split_bytecode_units(code_bytes)
     # Only inspect opcode positions. Searching the raw byte string would also
     # match an ordinary argument byte whose numeric value happens to be 145.
-    if any(ord(unit[0]) == EXTENDED_ARG for _old_pos, unit in units):
+    if any(byte_value(unit[0]) == EXTENDED_ARG for _old_pos, unit in units):
         return code_bytes
     candidates = []
     for index, (old_pos, unit) in enumerate(units):
         if index < 2 or len(unit) != 3:
             continue
-        opv = ord(unit[0])
+        opv = byte_value(unit[0])
         if opv == EXTENDED_ARG or is_relative_jump_op(opv) or is_absolute_jump_op(opv):
             continue
         if is_control_flow_op(opv):
@@ -1042,5 +1064,5 @@ def bytecode_extended_arg_prefixes(code_bytes, interval=11, limit=6):
     selected = selected[:limit]
     if not selected:
         return code_bytes
-    prefix = chr(EXTENDED_ARG) + '\x00\x00'
-    return insert_bytecode_blocks(code_bytes, dict((old_pos, prefix) for old_pos in selected))
+    prefix = byte_char(EXTENDED_ARG) + '\x00\x00'
+    return insert_bytecode_blocks(code_bytes, dict((old_pos, prefix) for old_pos in selected))\n

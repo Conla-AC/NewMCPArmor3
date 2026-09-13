@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Generated source templates for supported loader modes."""
-from __future__ import absolute_import, print_function
+
 
 
 SOURCE_LOADER_TEMPLATE = r'''# -*- coding: utf-8 -*-
@@ -435,4 +435,4 @@ def %(run_name)s():
 
 %(loader_noise)s
 %(run_name)s()
-'''
+'''\n

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Small generated-loader source builders and decoy tables."""
-from __future__ import absolute_import, print_function
+
 
 import random
 
@@ -50,7 +50,7 @@ def rows_repr_any(rows):
 def py_string_literal(value):
     if value is None:
         value = ''
-    if isinstance(value, unicode):
+    if isinstance(value, str):
         raw = value.encode('utf-8')
     else:
         raw = str(value)
@@ -158,12 +158,69 @@ def build_trampoline_layers(count):
     for _ in range(count):
         name = random_ident('tr')
         guard = random.randint(1000, 999999)
-        funcs.append('def %s(%s, %s, %s):\n    %s = %d\n    if (%s & 1) or True:\n        return %s(%s, %s, %s)\n    return None\n' % (
-            name, arg_ft, arg_co, arg_gl, local_v, guard, local_v,
-            prev, arg_ft, arg_co, arg_gl))
+        # opaque always-true predicate: v*v+v is always even
+        funcs.append('def %s(%s, %s, %s):\n    %s = %d\n    if (%s * %s + %s) %% 2 == 0:\n        return %s(%s, %s, %s)\n    return None\n' % (
+            name, arg_ft, arg_co, arg_gl, local_v, guard, local_v, local_v,
+            local_v, prev, arg_ft, arg_co, arg_gl))
         prev = name
     funcs.append('%s = %s\n' % (entry, prev))
     return '\n'.join(funcs), entry
+
+
+def build_executable_decoys(count):
+    """Decoy functions that are actually invoked by the flattened run().
+
+    Unlike the cold baits, these are called (their results fold into a junk
+    accumulator), and their branches use opaque always-true predicates rather
+    than an obvious ``if x == -1`` guard.
+    """
+    count = max(0, min(16, count))
+    if count <= 0:
+        return '', None
+    lines = []
+    names = []
+    for _ in range(count):
+        fn = random_ident('xd')
+        arg = random_ident('xa')
+        a = random_ident('xv')
+        b = random_ident('xv')
+        c = random_ident('xv')
+        seed = random.randint(0x10000, 0x7fffffff)
+        mul = random.choice((1103515245, 214013, 1664525, 22695477))
+        inc = random.choice((12345, 2531011, 1013904223, 1))
+        variant = random.randrange(3)
+        if variant == 0:
+            body = ('def %s(%s=None):\n'
+                    '    %s = %d\n'
+                    '    %s = (%s * %d + %d) & 0x7fffffff\n'
+                    '    if (%s * %s + %s) %% 2 == 0:\n'
+                    '        return (%s ^ (%s & 255)) & 0x7fffffff\n'
+                    '    return %s\n') % (
+                        fn, arg, a, seed, b, a, mul, inc, a, a, a,
+                        b, arg, b)
+        elif variant == 1:
+            body = ('def %s(%s=None):\n'
+                    '    %s = (%d ^ %d)\n'
+                    '    %s = (%s << 1) & 0x7ffffffe\n'
+                    '    if ((%s * %s - %s) & 1) == 0:\n'
+                    '        return (%s + %s + (%s & 255)) & 0x7fffffff\n'
+                    '    return %s\n') % (
+                        fn, arg, a, seed, mul, b, a, a, a, a,
+                        b, arg, a, b)
+        else:
+            body = ('def %s(%s=None):\n'
+                    '    %s = %d\n'
+                    '    %s = (%s >> 3) ^ (%s << 5) ^ %s\n'
+                    '    if (%s * %s + %s) %% 2 == 0:\n'
+                    '        return %s & 0x7fffffff\n'
+                    '    return %s ^ %d\n') % (
+                        fn, arg, a, seed, b, a, a, arg, a, a, a,
+                        b, a, seed)
+        lines.append(body)
+        names.append(fn)
+    holder = random_ident('xdh')
+    lines.append('%s = (%s)\n' % (holder, ', '.join(names) + (',' if len(names) == 1 else '')))
+    return '\n'.join(lines), holder
 
 
 def build_decoy_opcode_rows(count):
@@ -171,4 +228,4 @@ def build_decoy_opcode_rows(count):
     for _ in range(max(0, count)):
         rows.append((random_ident('op'), random.randint(0, 999999), (random.randint(0, 255), random.randint(0, 255), random.randint(0, 999999))))
     random.shuffle(rows)
-    return rows
+    return rows\n

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Source comment noise and unreachable-flow injection."""
-from __future__ import absolute_import, print_function
+
 
 import ast
 import random
@@ -187,4 +187,4 @@ SOURCE_VM_CMPOPS = {
     ast.Lt: 'LT', ast.LtE: 'LE', ast.Eq: 'EQ', ast.NotEq: 'NE',
     ast.Gt: 'GT', ast.GtE: 'GE', ast.Is: 'IS', ast.IsNot: 'ISNOT',
     ast.In: 'IN', ast.NotIn: 'NOTIN',
-}
+}\n

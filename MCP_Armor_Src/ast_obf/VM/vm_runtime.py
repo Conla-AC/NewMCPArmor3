@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Generated register-VM runtime source."""
-from __future__ import absolute_import, print_function
+
 
 import ast
 import fnmatch
@@ -179,12 +179,23 @@ class _SourceVMRowBinder(ast.NodeTransformer):
 
     def visit_Subscript(self, node):
         node = self.generic_visit(node)
-        if (isinstance(node.value, ast.Name) and node.value.id == self.row_name and
-                isinstance(node.slice, ast.Index) and
-                isinstance(node.slice.value, ast.Num)):
-            index = int(node.slice.value.n)
-            return ast.copy_location(ast.Num(n=self.physical_values[index]), node)
-        return node
+        if not (isinstance(node.value, ast.Name) and node.value.id == self.row_name):
+            return node
+        index = None
+        if hasattr(ast, 'Index') and isinstance(node.slice, ast.Index):
+            # Python 2 row indexing: row[Index(Num(n))]
+            inner = node.slice.value
+            if isinstance(inner, ast.Num):
+                index = int(inner.n)
+        else:
+            # Python 3 row indexing: row[Constant(value=n)]
+            constant = getattr(ast, 'Constant', None)
+            if (constant is not None and isinstance(node.slice, constant) and
+                    isinstance(node.slice.value, int)):
+                index = int(node.slice.value)
+        if index is None:
+            return node
+        return ast.copy_location(ast.Num(n=self.physical_values[index]), node)
 
 
 def _source_vm_block_handler(name, instructions, row_slots, namespace_name,
@@ -196,10 +207,10 @@ def _source_vm_block_handler(name, instructions, row_slots, namespace_name,
     last_next = 0
     for instruction in instructions:
         op = instruction[0]
-        logical = dict(zip(('a', 'b', 'c', 'd', 'e', 'next'), instruction[1:]))
+        logical = dict(list(zip(('a', 'b', 'c', 'd', 'e', 'next'), instruction[1:])))
         logical['op'] = 0
         physical = [None] * len(row_slots)
-        for key, index in row_slots.items():
+        for key, index in list(row_slots.items()):
             physical[index] = logical[key]
         operation = ast.parse(_source_vm_handler_source(
             op, random_ident(), row_slots, namespace_name, sentinel_name,
@@ -266,7 +277,7 @@ def make_source_vm_runtime(tokens, block_specs, runner_name, decode_name,
         'e': '%(values)s[6]', 'next': '%(values)s[7]',
     }
     physical_rows = [None] * len(row_slots)
-    for logical, physical in row_slots.items():
+    for logical, physical in list(row_slots.items()):
         physical_rows[physical] = logical_rows[logical]
     row_tuple = ', '.join(physical_rows)
 
@@ -429,7 +440,7 @@ def %(decode)s(%(payload)s, %(flow)s):
     elif isinstance(%(raw)s, tuple) and len(%(raw)s) == 3 and %(raw)s[0] == 'C':
         %(rawkey)s = %(raw)s[1]
         %(binary)s = __import__('base64').b64decode(%(raw)s[2])
-        %(binary)s = ''.join(chr(ord(%(value)s) ^ ((%(rawkey)s + %(index)s * 131) & 255)) for %(index)s, %(value)s in enumerate(%(binary)s))
+        %(binary)s = (''.join(chr((ord(%(value)s) ^ ((%(rawkey)s + %(index)s * 131) & 255))) for %(index)s, %(value)s in enumerate(%(binary)s)) if bytes is str else bytes(((%(value)s ^ ((%(rawkey)s + %(index)s * 131) & 255)) for %(index)s, %(value)s in enumerate(%(binary)s))))
         %(binary)s = __import__('zlib').decompress(%(binary)s)
         if len(%(binary)s) %% 32:
             raise ValueError()
@@ -438,7 +449,7 @@ def %(decode)s(%(payload)s, %(flow)s):
     elif isinstance(%(raw)s, tuple) and len(%(raw)s) == 2 and isinstance(%(raw)s[1], str):
         %(rawkey)s = %(raw)s[0]
         %(binary)s = __import__('base64').b64decode(%(raw)s[1])
-        %(binary)s = ''.join(chr(ord(%(value)s) ^ ((%(rawkey)s + %(index)s * 131) & 255)) for %(index)s, %(value)s in enumerate(%(binary)s))
+        %(binary)s = (''.join(chr((ord(%(value)s) ^ ((%(rawkey)s + %(index)s * 131) & 255))) for %(index)s, %(value)s in enumerate(%(binary)s)) if bytes is str else bytes(((%(value)s ^ ((%(rawkey)s + %(index)s * 131) & 255)) for %(index)s, %(value)s in enumerate(%(binary)s))))
         if len(%(binary)s) %% 40:
             raise ValueError()
         %(raw)s = tuple(__import__('struct').unpack('>10i', %(binary)s[%(offset)s:%(offset)s + 40]) for %(offset)s in range(0, len(%(binary)s), 40))
@@ -752,4 +763,4 @@ def %(runner)s(%(payload)s, %(argv)s, %(gate)s):
         for child in ast.walk(statement):
             if isinstance(child, (ast.FunctionDef, ast.ClassDef)):
                 child._mcp_source_synthetic = True
-    return statements
+    return statements\n

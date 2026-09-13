@@ -1,20 +1,29 @@
 # -*- coding: utf-8 -*-
 """String and constant source-level transformations."""
-from __future__ import absolute_import, print_function
+
 
 import ast
 import random
 
 from MCP_Armor_Src.utils.encoding import (
+    byte_char, byte_value,
+    byte_value,
     random_bytes,
     random_ident,
     visual_int,
 )
 from MCP_Armor_Src.utils.chacha import chacha8
 
+try:
+    _text_type = unicode
+    _string_types = (str, unicode)
+except NameError:
+    _text_type = str
+    _string_types = (str,)
+
 
 def source_string_is_safe(value):
-    if not isinstance(value, (str, unicode)):
+    if not isinstance(value, _string_types):
         return False
     if len(value) < 4:
         return False
@@ -119,7 +128,7 @@ class SourceStringSplitter(ast.NodeTransformer):
         count = min(self.parts, len(value))
         if count < 2:
             return [value]
-        cuts = sorted(random.sample(range(1, len(value)), count - 1))
+        cuts = sorted(random.sample(list(range(1, len(value))), count - 1))
         chunks = []
         start = 0
         for cut in cuts + [len(value)]:
@@ -164,32 +173,37 @@ class SourceStringXor(ast.NodeTransformer):
         self.entry_by_value = {}
         self.used_tokens = set()
         self.chacha_module_name = random_ident('sxc')
+        self.module_seed = random.randint(1, 0x7fffffff)
 
     def fixed_text_bytes(self):
         value = self.text_key
-        if isinstance(value, unicode):
+        if isinstance(value, _text_type):
             value = value.encode('utf-8')
-        elif not isinstance(value, str):
-            value = str(value)
+        elif not isinstance(value, (bytes, bytearray)):
+            value = str(value).encode('utf-8')
         if not value:
             value = 'MCP_Shiled'
         return value
 
     def make_key(self, raw):
         if self.mode == 'chacha':
-            return [ord(ch) for ch in random_bytes(32)]
+            return [byte_value(ch) for ch in random_bytes(32)]
         if self.mode == 'number':
             return [self.number_key]
         if self.mode == 'text':
-            return [ord(ch) for ch in self.fixed_text_bytes()]
+            return [byte_value(ch) for ch in self.fixed_text_bytes()]
         upper = max(2, min(12, max(2, len(raw))))
         size = random.randint(2, upper)
         return [random.randint(1, 255) for _ in range(size)]
 
     def make_payload(self, raw, key):
         if self.mode == 'chacha':
+            # ``bytes(generator)`` is not a byte conversion on Python 2.7:
+            # it stringifies the generator object.  The generated target
+            # loader correctly reconstructs the key with chr(), so build the
+            # host-side encryption key with the same explicit byte join.
             key_bytes = ''.join(chr(value & 255) for value in key)
-            encrypted = [ord(ch) for ch in chacha8(raw, key_bytes)]
+            encrypted = [byte_value(ch) for ch in chacha8(raw, key_bytes)]
             return encrypted, key, [0]
         size = len(key)
         rotate = random.randrange(0, size)
@@ -204,15 +218,25 @@ class SourceStringXor(ast.NodeTransformer):
         key_row = prefix + scheduled + suffix
         bias = random.randint(1, 255)
         drift = random.randint(1, 127)
+        record_salt = random.randint(1, 0x7fffffff)
+        site_tag = random.randint(1, 0x7fffffff)
         encrypted = []
         for index, char in enumerate(raw):
-            mixed = ord(char) ^ key[index % size]
+            state = (self.module_seed ^ record_salt ^ site_tag ^
+                     (index * 0x45D9F3B)) & 0xffffffff
+            state ^= (state >> 16)
+            state = (state * 0x7FEB352D) & 0xffffffff
+            state ^= (state >> 15)
+            stream = ((state ^ (state >> 8) ^
+                       key[index % size]) & 255)
+            mixed = byte_value(char) ^ stream
             encrypted.append((mixed + bias + index * drift) & 255)
-        values = [salt, key_step, rotate, bias, drift, size, len(prefix)]
-        descriptor_mask = random.randint(257, 4095)
-        descriptor_step = random.randint(3, 257)
+        values = [self.module_seed, record_salt, site_tag, salt, key_step,
+                  rotate, bias, drift, size, len(prefix)]
+        descriptor_mask = random.randint(0x10001, 0x0fffffff)
+        descriptor_step = random.randint(3, 0x1ffff)
         descriptor = [
-            (value + descriptor_mask + index * descriptor_step) & 65535
+            (value + descriptor_mask + index * descriptor_step) & 0xffffffff
             for index, value in enumerate(values)
         ]
         descriptor.extend([descriptor_mask, descriptor_step])
@@ -254,10 +278,11 @@ class SourceStringXor(ast.NodeTransformer):
         return ast.copy_location(expr, location)
 
     def visit_Str(self, node):
-        if (id(node) in self.protected or not isinstance(node.s, (str, unicode)) or
+        if (id(node) in self.protected or
+                not isinstance(node.s, _string_types) or
                 len(node.s) < self.min_length):
             return node
-        is_unicode = isinstance(node.s, unicode)
+        is_unicode = isinstance(node.s, _text_type)
         raw = node.s.encode('utf-8') if is_unicode else node.s
         if not raw:
             return node
@@ -373,6 +398,10 @@ class SourceStringXor(ast.NodeTransformer):
         codec_name = random_ident('sxco')
         self_name = random_ident('sxs')
         args_name = random_ident('sxa')
+        seed_name = random_ident('sxseed')
+        record_salt_name = random_ident('sxrs')
+        site_tag_name = random_ident('sxsite')
+        state_name = random_ident('sxstate')
         if self.mode == 'chacha':
             # Native NetEase ChaCha is deliberately the only runtime cipher
             # implementation.  The generated source carries ciphertext and
@@ -426,27 +455,29 @@ class SourceStringXor(ast.NodeTransformer):
             collect_code = (
                 '        %s = [None] * %s(%s)\n'
                 '        for %s, %s in %s(%s):\n'
-                '            %s[%s] = %s(%s(%s, %s(%s, %s, %s, %s, %s, %s, %s), %s, %s, %s))\n'
+                '            %s[%s] = %s(%s(%s, %s(%s, %s, %s, %s, %s, %s, %s), %s, %s, %s, %s, %s, %s))\n'
             ) % (
                 chars_name, len_name, data_name,
                 index_name, value_name, enumerate_name, data_name,
                 chars_name, index_name, chr_name, mix_func,
                 value_name, key_func, row_name, salt_name, step_name,
                 rotate_name, size_name, offset_name, index_name,
-                bias_name, drift_name, index_name)
+                bias_name, drift_name, index_name,
+                seed_name, record_salt_name, site_tag_name)
         else:
             collect_code = (
                 '        %s = []\n'
                 '        %s = %s.append\n'
                 '        for %s, %s in %s(%s):\n'
-                '            %s(%s(%s(%s, %s(%s, %s, %s, %s, %s, %s, %s), %s, %s, %s)))\n'
+                '            %s(%s(%s(%s, %s(%s, %s, %s, %s, %s, %s, %s), %s, %s, %s, %s, %s, %s)))\n'
             ) % (
                 chars_name, append_name, chars_name,
                 index_name, value_name, enumerate_name, data_name,
                 append_name, chr_name, mix_func,
                 value_name, key_func, row_name, salt_name, step_name,
                 rotate_name, size_name, offset_name, index_name,
-                bias_name, drift_name, index_name)
+                bias_name, drift_name, index_name,
+                seed_name, record_salt_name, site_tag_name)
         if self.debug:
             debug_begin = "        print('[DEBUG] StringXor %%s DecodeBegin Loaded' %% %s)\n" % token_name
             debug_cache_hit = "            print('[DEBUG] StringXor %%s CacheHit Loaded' %% %s)\n" % token_name
@@ -469,9 +500,12 @@ class SourceStringXor(ast.NodeTransformer):
             'def %(key_func)s(%(row)s, %(salt)s, %(step)s, %(rotate)s, %(size)s, %(offset)s, %(index)s):\n'
             '    %(pos)s = ((%(index)s %% %(size)s) - %(rotate)s) %% %(size)s\n'
             '    return (%(row)s[%(offset)s + %(pos)s] - %(salt)s - (%(pos)s * %(step)s)) & 255\n'
-            'def %(mix_func)s(%(value)s, %(key)s, %(bias)s, %(drift)s, %(index)s):\n'
+            'def %(mix_func)s(%(value)s, %(key)s, %(bias)s, %(drift)s, %(index)s, %(seed)s, %(record_salt)s, %(site_tag)s):\n'
             '    %(base)s = (%(value)s - %(bias)s - (%(index)s * %(drift)s)) & 255\n'
-            '    return (%(mix_expr)s) & 255\n'
+            '    %(state)s = (%(seed)s ^ %(record_salt)s ^ %(site_tag)s ^ (%(index)s * 0x45D9F3B)) & 0xffffffff\n'
+            '    %(state)s = ((%(state)s ^ (%(state)s >> 16)) * 0x7FEB352D) & 0xffffffff\n'
+            '    %(state)s = %(state)s ^ (%(state)s >> 15)\n'
+            '    return ((%(mix_expr)s) ^ (%(state)s ^ (%(state)s >> 8)) & 255)\n'
             'def %(factory)s(%(chr_name)s=chr, %(enum_name)s=enumerate, %(len_name)s=len):\n'
             '    %(cache)s = {}\n'
             '    %(codec)s = %(chr_name)s(117) + %(chr_name)s(116) + %(chr_name)s(102) + %(chr_name)s(45) + %(chr_name)s(56)\n'
@@ -482,8 +516,8 @@ class SourceStringXor(ast.NodeTransformer):
             '            return %(cache)s[%(token)s]\n'
             '        %(mask)s = %(descriptor)s[-2]\n'
             '        %(descriptor_step)s = %(descriptor)s[-1]\n'
-            '        %(values)s = [(%(item)s - %(mask)s - (%(idx)s * %(descriptor_step)s)) & 65535 for %(idx)s, %(item)s in %(enum_name)s(%(descriptor)s[:-2])]\n'
-            '        %(salt)s, %(step)s, %(rotate)s, %(bias)s, %(drift)s, %(size)s, %(offset)s = %(values)s[:7]\n'
+            '        %(values)s = [(%(item)s - %(mask)s - (%(idx)s * %(descriptor_step)s)) & 0xffffffff for %(idx)s, %(item)s in %(enum_name)s(%(descriptor)s[:-2])]\n'
+            '        %(seed)s, %(record_salt)s, %(site_tag)s, %(salt)s, %(step)s, %(rotate)s, %(bias)s, %(drift)s, %(size)s, %(offset)s = %(values)s[:10]\n'
             '%(debug_descriptor)s'
             '%(debug_key)s'
             '%(collect_code)s'
@@ -511,6 +545,8 @@ class SourceStringXor(ast.NodeTransformer):
             'index': index_name, 'pos': pos_name, 'value': value_name,
             'key': key_name, 'bias': bias_name, 'drift': drift_name,
             'base': base_name, 'mix_expr': mix_expr, 'cache': cache_name,
+            'seed': seed_name, 'record_salt': record_salt_name,
+            'site_tag': site_tag_name, 'state': state_name,
             'token': token_name, 'data': data_name,
             'descriptor': descriptor_name, 'unicode': unicode_name,
             'mask': mask_name, 'descriptor_step': descriptor_step_name,
@@ -607,7 +643,7 @@ class SourceConstantPool(ast.NodeTransformer):
         self.counts = {}
 
     def value_key(self, value):
-        return ('u' if isinstance(value, unicode) else 's', value)
+        return ('u' if isinstance(value, _text_type) else 's', value)
 
     def collect_used(self, tree):
         for node in ast.walk(tree):
@@ -643,7 +679,7 @@ class SourceConstantPool(ast.NodeTransformer):
         body = list(node.body)
         node.body = [self.visit(stmt) for stmt in body]
         assignments = []
-        for value_key, name in sorted(self.pool.items(), key=lambda item: item[1]):
+        for value_key, name in sorted(list(self.pool.items()), key=lambda item: item[1]):
             assignments.append(ast.Assign(
                 targets=[ast.Name(id=name, ctx=ast.Store())],
                 value=ast.Str(s=value_key[1])))
@@ -738,4 +774,4 @@ class SourceExceptionShell(ast.NodeTransformer):
         elif not isinstance(node.finalbody[-1], ast.Pass):
             node.finalbody.append(ast.Pass())
         ast.fix_missing_locations(node)
-        return node
+        return node\n

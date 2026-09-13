@@ -1,7 +1,7 @@
-﻿#!/usr/bin/env python2
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
+
 
 import argparse
 import ast
@@ -242,14 +242,14 @@ def list_config(value):
         return []
     if isinstance(value, (list, tuple)):
         return [str(item) for item in value if not is_empty_config(item)]
-    if isinstance(value, basestring):
+    if isinstance(value, str):
         return [item.strip() for item in value.replace(',', ';').split(';') if item.strip()]
     return [str(value)]
 
 
 def bool_config(config, key, default=False):
     value = config.get(key, default)
-    if isinstance(value, basestring):
+    if isinstance(value, str):
         return value.strip().lower() in ('1', 'true', 'yes', 'y', 'on')
     return bool(value)
 
@@ -284,7 +284,7 @@ def config_to_argv(config):
     else:
         argv.append('--no-client-mcs-opmap')
     overrides = config.get('mcs_op_override', [])
-    if isinstance(overrides, basestring):
+    if isinstance(overrides, str):
         overrides = [item.strip() for item in overrides.replace(',', ';').split(';') if item.strip()]
     for item in overrides or []:
         argv.extend(['--mcs-op-override', str(item)])
@@ -1252,4 +1252,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
+    main()\n

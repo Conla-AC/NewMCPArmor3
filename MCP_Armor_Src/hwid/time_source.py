@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Trusted current time from Taobao's timestamp endpoint."""
-from __future__ import absolute_import
+
 
 from MCP_Armor_Src.hwid.network import fetch_json
 
@@ -31,4 +31,4 @@ def taobao_timestamp(timeout=6):
             return _timestamp_from_response(fetch_json(url, timeout, True))
         except Exception as exc:
             errors.append('%s: %s' % (url, exc))
-    raise IOError('Taobao time API unavailable (%s)' % '; '.join(errors))
+    raise IOError('Taobao time API unavailable (%s)' % '; '.join(errors))\n

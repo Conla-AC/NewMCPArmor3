@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Function identity weaving and decompiler carrier transforms."""
-from __future__ import absolute_import, print_function
+
 
 import ast
 import copy
@@ -13,8 +13,38 @@ from MCP_Armor_Src.ast_obf.literals import (
 )
 
 from MCP_Armor_Src.utils.encoding import (
+    byte_char, byte_value,
     random_ident,
 )
+
+
+def _ensure_locations(node, lineno=1, col_offset=0):
+    """Fill source coordinates missed by Python 2's AST helper.
+
+    CPython 2.7 ``ast.fix_missing_locations`` does not reliably propagate
+    coordinates through every manually-created expression nested below
+    ``Index``/``Attribute`` containers.  Identity weaving creates exactly
+    those shapes.  Seed only absent fields and retain every real source
+    position already present on copied user nodes.
+    """
+    if not isinstance(node, ast.AST):
+        return
+    current_line = getattr(node, 'lineno', None)
+    current_col = getattr(node, 'col_offset', None)
+    if not isinstance(current_line, int) or current_line < 1:
+        current_line = lineno
+        try:
+            node.lineno = int(current_line)
+        except Exception:
+            pass
+    if not isinstance(current_col, int) or current_col < 0:
+        current_col = col_offset
+        try:
+            node.col_offset = int(current_col)
+        except Exception:
+            pass
+    for child in ast.iter_child_nodes(node):
+        _ensure_locations(child, current_line, current_col)
 
 
 class SourceIdentityWeaver(object):
@@ -221,7 +251,13 @@ class SourceIdentityWeaver(object):
 
     def apply(self, tree):
         tree.body = self._body(tree.body)
+        _ensure_locations(tree)
         ast.fix_missing_locations(tree)
+        # ``fix_missing_locations`` in Python 2.7 does not descend through
+        # every legacy ``Index``/``Subscript`` expression.  Run the explicit
+        # pass again after fixing parents so all expression leaves carry
+        # concrete coordinates before the target compiler validates the tree.
+        _ensure_locations(tree)
         return tree, self.count
 
 
@@ -297,7 +333,7 @@ def make_source_decompiler_carrier(index=0, exception_lattice=True,
     generator_values = random_ident('generator_values')
     generator_item = random_ident('generator_item')
     docstring_bytes = max(0, min(16384, int(docstring_bytes or 0)))
-    blob = ''.join(chr(random.randrange(0, 256))
+    blob = ''.join(byte_char(random.randrange(0, 256))
                    for _ in range(docstring_bytes))
     parts = [
         'def %(carrier)s((%(outer_left)s, (%(outer_mid)s, %(outer_right)s)), %(seed)s=None):',
@@ -407,6 +443,74 @@ def make_source_decompiler_carrier(index=0, exception_lattice=True,
     return nodes
 
 
+def make_runtime_type_table_carrier(index=0):
+    """Build a cold Python-2 runtime-type table carrier.
+
+    The sample's useful idea is deriving implementation types from ordinary
+    objects instead of importing their names.  Keep it in an uncalled nested
+    function: it contributes descriptor, code and generator-frame shapes to
+    the emitted module without probing the game runtime at import time.
+    """
+    carrier = random_ident('type_table_%d' % index)
+    none_type = random_ident('none_type')
+    meta_type = random_ident('meta_type')
+    hash_type = random_ident('hash_type')
+    new_type = random_ident('new_type')
+    hash_owner_type = random_ident('hash_owner_type')
+    new_owner_type = random_ident('new_owner_type')
+    code_type = random_ident('code_type')
+    generator_type = random_ident('generator_type')
+    frame_type = random_ident('frame_type')
+    generator_fn = random_ident('generator_fn')
+    generator = random_ident('generator')
+    descriptor_class = random_ident('descriptor_class')
+    descriptor_method = random_ident('descriptor_method')
+    rows = random_ident('type_rows')
+    seed_name = random_ident('type_seed')
+    blob_name = random_ident('type_blob')
+    seed = random.randint(0x10000, 0x7fffffff)
+    blob = ''.join(byte_char(random.randrange(0, 256))
+                   for _ in range(random.randint(20, 56)))
+    source = (
+        'def %(carrier)s(%(seed_name)s=%(seed)d, %(blob_name)s=%(blob)r):\n'
+        '    %(none_type)s = None.__new__.__self__\n'
+        '    %(meta_type)s = None.__hash__.__objclass__.__class__\n'
+        '    %(hash_type)s = type(None.__hash__)\n'
+        '    %(new_type)s = type(None.__new__)\n'
+        '    %(hash_owner_type)s = None.__hash__.__class__\n'
+        '    %(new_owner_type)s = None.__new__.__class__\n'
+        '    def %(generator_fn)s():\n'
+        '        yield %(seed)d\n'
+        '    %(generator)s = %(generator_fn)s()\n'
+        '    %(generator_type)s = type(%(generator)s)\n'
+        '    %(frame_type)s = type(%(generator)s.gi_frame)\n'
+        '    %(code_type)s = type(%(generator_fn)s.func_code)\n'
+        '    %(generator)s.close()\n'
+        '    class %(descriptor_class)s(object):\n'
+        '        %(rows)s = (%(none_type)s, %(meta_type)s, %(hash_type)s, %(new_type)s, %(hash_owner_type)s, %(new_owner_type)s, %(code_type)s, %(generator_type)s, %(frame_type)s)\n'
+        '        def %(descriptor_method)s(self, %(blob_name)s=None):\n'
+        '            return self.%(rows)s if %(blob_name)s is None else (%(blob_name)s, self.%(rows)s)\n'
+        '    return (%(descriptor_class)s, %(generator_fn)s, %(seed)d)\n'
+        'del %(carrier)s'
+    ) % {
+        'carrier': carrier, 'none_type': none_type, 'meta_type': meta_type,
+        'hash_type': hash_type, 'new_type': new_type,
+        'hash_owner_type': hash_owner_type, 'new_owner_type': new_owner_type,
+        'code_type': code_type,
+        'generator_type': generator_type, 'frame_type': frame_type,
+        'generator_fn': generator_fn, 'generator': generator,
+        'descriptor_class': descriptor_class,
+        'descriptor_method': descriptor_method, 'rows': rows,
+        'seed': seed, 'seed_name': seed_name, 'blob': blob,
+        'blob_name': blob_name,
+    }
+    nodes = ast.parse(source).body
+    for node in nodes:
+        if isinstance(node, ast.FunctionDef):
+            node._mcp_source_synthetic = True
+    return nodes
+
+
 def inject_source_decompiler_carriers(tree, count=0, exception_lattice=True,
                                       class_body_trap=True,
                                       docstrings=False,
@@ -424,6 +528,7 @@ def inject_source_decompiler_carriers(tree, count=0, exception_lattice=True,
                 if docstrings else 0)
         statements.extend(make_source_decompiler_carrier(
             index, exception_lattice, class_body_trap, size))
+        statements.extend(make_runtime_type_table_carrier(index))
     insert_source_string_xor_helpers(tree, statements)
     ast.fix_missing_locations(tree)
-    return tree, count
+    return tree, count\n

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Top-level CLI application orchestration."""
-from __future__ import absolute_import, print_function
+
 
 import os
 import random
@@ -46,20 +46,16 @@ from MCP_Armor_Src.utils.filesystem import (
     write_file,
 )
 
-from MCP_Armor_Src.utils.runtime import (
-    require_py27,
-)
+from MCP_Armor_Src.utils.runtime import require_py313
 
 
 def _print_cli(message):
-    """Write Unicode-safe status lines for Python 2 UI subprocesses."""
-    if sys.version_info[0] < 3 and isinstance(message, unicode):
-        message = message.encode('utf-8')
-    sys.stdout.write(message + '\n')
+    """Write Unicode-safe status lines for Python 3 subprocesses."""
+    sys.stdout.write(str(message) + '\n')
 
 
 def main(argv=None):
-    require_py27()
+   # require_py313()
     random.seed(int(time.time() * 1000000) ^ os.getpid())
     parser = build_arg_parser()
     if argv is None:
@@ -103,8 +99,13 @@ def main(argv=None):
         else:
             if not os.path.isfile(args.input):
                 parser.error('input file does not exist: %s' % args.input)
+            if getattr(opts, 'source_module_rename', False):
+                parser.error(
+                    'source.module_rename requires a project directory. '
+                    'Select multi-folder mode and choose the project folder, '
+                    'or set source.module_rename: false for a single .py file.')
             result = process_single(args.input, args.output, args, opts)
             _print_cli('wrote %s | %s' % (args.output, result))
     except StaticCheckFailure as error:
         sys.stderr.write(str(error) + '\n')
-        raise SystemExit(4)
+        raise SystemExit(4)\n

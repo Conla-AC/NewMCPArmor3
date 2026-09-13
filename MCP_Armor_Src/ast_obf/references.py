@@ -240,4 +240,22 @@ def obfuscate_source_references(tree, ratio=35, excludes=None, variants=3,
         random.shuffle(helpers)
         tree = insert_source_string_xor_helpers(tree, helpers)
     ast.fix_missing_locations(tree)
-    return tree, transformer.count
+    # Helpers are parsed independently and inserted into an existing tree;
+    # Python 2.7 requires coordinates on every nested expression.
+    def repair(node, line=1, col=0):
+        if not isinstance(node, ast.AST):
+            return
+        current_line = getattr(node, 'lineno', None) or line
+        current_col = getattr(node, 'col_offset', None)
+        if current_col is None:
+            current_col = col
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.stmt, ast.expr)):
+                if getattr(child, 'lineno', None) is None:
+                    child.lineno = current_line
+                if getattr(child, 'col_offset', None) is None:
+                    child.col_offset = current_col
+            repair(child, current_line, current_col)
+    repair(tree)
+    ast.fix_missing_locations(tree)
+    return tree, transformer.count\n

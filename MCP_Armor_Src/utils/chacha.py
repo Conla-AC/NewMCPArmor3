@@ -1,11 +1,18 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import struct
+import sys
 
 # ChaCha8 常量
 WQSWORD_CHACHA_KEY = "1234567890123456" + "\xa4\xcd\xf7\x6b\xf2\xde\x21\xf2\x51\x77\xfe\xee\x02\xd4\x84\xe6"
-WQSWORD_CHACHA_TAIL = "\x00\x00\x00\x00163 NetEase\n"
+WQSWORD_CHACHA_TAIL = "\\x00\\x00\\x00\\x00163 NetEase\\n"
 WQSWORD_CHACHA_SIGMA = "expand 32-byte k"
+
+
+def _as_bytes(value):
+    if isinstance(value, bytes):
+        return value
+    return value.encode('latin1')
 
 
 def rotl32(value, shift):
@@ -40,12 +47,25 @@ def chacha_crypt(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL, rounds=
         加密/解密后的数据
     """
     # 初始化状态
-    state = list(struct.unpack("<4I", WQSWORD_CHACHA_SIGMA))
+    original_text = sys.version_info[0] >= 3 and isinstance(data, str)
+    data = _as_bytes(data)
+    key = _as_bytes(key)
+    # Normalize variable UI keys to ChaCha's fixed 32-byte key and 16-byte
+    # nonce fields. Repetition/truncation is deterministic across runtimes.
+    if not key:
+        key = _as_bytes(WQSWORD_CHACHA_KEY)
+    if len(key) != 32:
+        key = (key * ((32 + len(key) - 1) // len(key)))[:32]
+    tail = _as_bytes(tail)
+    if len(tail) != 16:
+        tail = (tail * ((16 + len(tail) - 1) // len(tail)))[:16]
+    sigma = _as_bytes(WQSWORD_CHACHA_SIGMA)
+    state = list(struct.unpack("<4I", sigma))
     state += list(struct.unpack("<8I", key))
     state += list(struct.unpack("<4I", tail))
     
     out = []
-    block = ""
+    block = b''
     offset = 64
     
     for ch in data:
@@ -54,7 +74,7 @@ def chacha_crypt(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL, rounds=
             working = list(state)
             
             # 执行指定轮数的quarter rounds
-            for _ in xrange(int(rounds) >> 1):
+            for _ in range(int(rounds) >> 1):
                 # 列混合
                 quarter_round(working, 0, 4, 8, 12)
                 quarter_round(working, 1, 5, 9, 13)
@@ -67,7 +87,7 @@ def chacha_crypt(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL, rounds=
                 quarter_round(working, 3, 4, 9, 14)
             
             # 混合结果
-            mixed = [(working[i] + state[i]) & 0xFFFFFFFF for i in xrange(16)]
+            mixed = [(working[i] + state[i]) & 0xFFFFFFFF for i in range(16)]
             block = struct.pack("<16I", *mixed)
             
             # 增加计数器
@@ -75,10 +95,16 @@ def chacha_crypt(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL, rounds=
             offset = 0
         
         # XOR操作
-        out.append(chr(ord(ch) ^ ord(block[offset])))
+        left = ch if isinstance(ch, int) else ord(ch)
+        right = block[offset] if isinstance(block[offset], int) else ord(block[offset])
+        out.append(left ^ right)
         offset += 1
     
-    return "".join(out)
+    if sys.version_info[0] < 3:
+        result = ''.join(chr(value) for value in out)
+    else:
+        result = bytes(out)
+    return result.decode('latin1') if original_text else result
 
 
 def chacha8(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL):
@@ -93,5 +119,4 @@ def chacha12(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL):
 
 def chacha20(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL):
     """ChaCha20 快捷函数"""
-    return chacha_crypt(data, key, tail, 20)
-
+    return chacha_crypt(data, key, tail, 20)\n

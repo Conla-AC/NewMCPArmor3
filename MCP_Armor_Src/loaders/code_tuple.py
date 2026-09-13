@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """Code Tuple packing, arenas and reconstruction source."""
-from __future__ import absolute_import, print_function
 
-import cPickle
+
+import pickle
 import marshal
-import opcode
+from MCP_Armor_Src.core import py27_opcode as opcode
 import random
+import sys
 import types
 
 from MCP_Armor_Src.bytecode_obf.decoys import (
@@ -45,6 +46,7 @@ from MCP_Armor_Src.core.constants import (
 )
 
 from MCP_Armor_Src.utils.encoding import (
+    byte_value,
     debug_print_code,
     random_bytes,
     random_ident,
@@ -54,7 +56,7 @@ from MCP_Armor_Src.utils.encoding import (
 def make_fake_code_bytes_chunk(size_hint):
     size_hint = max(1, min(96, size_hint))
     size = random.randint(1, size_hint)
-    return ''.join(chr(random.randint(0, 255)) for _ in range(size))
+    return bytes(random.randint(0, 255) for _ in range(size))
 
 
 def split_code_bytes_for_payload(code_bytes, enabled=False, min_size=48, max_chunks=6, fake_chunks=0):
@@ -65,7 +67,7 @@ def split_code_bytes_for_payload(code_bytes, enabled=False, min_size=48, max_chu
     chunk_count = min(max_chunks, max(2, len(code_bytes) // max(1, min_size)))
     if chunk_count < 2:
         return code_bytes
-    cuts = sorted(random.sample(range(1, len(code_bytes)), chunk_count - 1))
+    cuts = sorted(random.sample(list(range(1, len(code_bytes))), chunk_count - 1))
     parts = []
     start = 0
     for cut in cuts + [len(code_bytes)]:
@@ -90,7 +92,14 @@ def split_code_bytes_for_payload(code_bytes, enabled=False, min_size=48, max_chu
 
 def _xor_bytes(data, key):
     key = max(1, int(key) & 255)
-    return ''.join(chr(ord(ch) ^ ((key + index) & 255)) for index, ch in enumerate(data))
+    values = [byte_value(ch) ^ ((key + index) & 255)
+              for index, ch in enumerate(data)]
+    # ``bytes(generator)`` is a textual generator representation on Python 2
+    # rather than a byte container.  Build the payload explicitly so reference
+    # rows remain valid for both the Python 2 target and Python 3 controller.
+    if sys.version_info[0] < 3:
+        return ''.join(chr(value) for value in values)
+    return bytes(values)
 
 
 def widen_code_ref_row(row, enabled=False):
@@ -128,7 +137,7 @@ def make_code_ref_decoy_rows(count, start_id, code_tuple_field_shuffle=False, co
         fake_tuple = pack_code_tuple(fake_code, False, 48, 6, 0, 0, None, code_tuple_field_shuffle, False, False, code_tuple_fragments, code_tuple_fragment_providers, code_tuple_provider_graph, code_tuple_provider_decoys, code_field_descriptors, code_provider_context_bind)
         ref_id = start_id + index
         ref_key = random.randint(1, 255)
-        rows.append(widen_code_ref_row((ref_id, ref_key, _xor_bytes(cPickle.dumps(fake_tuple, 2), ref_key)), code_ref_wide_rows))
+        rows.append(widen_code_ref_row((ref_id, ref_key, _xor_bytes(pickle.dumps(fake_tuple, 2), ref_key)), code_ref_wide_rows))
     return rows
 
 
@@ -284,7 +293,7 @@ def pack_code_tuple(code, code_bytes_split=False, code_bytes_split_min=48, code_
             if code_ref_table is not None:
                 ref_id = len(code_ref_table) + 1
                 ref_key = random.randint(1, 255)
-                ref_blob = cPickle.dumps(packed_const, 2)
+                ref_blob = pickle.dumps(packed_const, 2)
                 code_ref_table.append(widen_code_ref_row((ref_id, ref_key, _xor_bytes(ref_blob, ref_key)), code_ref_wide_rows))
                 if code_ref_mask_markers:
                     ref_mask = random.randint(1, 2147483647)
@@ -292,7 +301,7 @@ def pack_code_tuple(code, code_bytes_split=False, code_bytes_split_min=48, code_
                 else:
                     const = (CODE_REF_TABLE_MAGIC, ref_id, ref_key)
             else:
-                const = CODE_TUPLE_MAGIC + cPickle.dumps(packed_const, 2)
+                const = CODE_TUPLE_MAGIC + pickle.dumps(packed_const, 2)
         consts.append(const)
     code_bytes = split_code_bytes_for_payload(code.co_code, code_bytes_split, code_bytes_split_min, depth_max_chunks, depth_fake_chunks)
     fields = (
@@ -389,7 +398,7 @@ def choose_global_arena_base(fields, templates, prior_fields, template_delta):
 def resolve_stored_opcode_map(stored_to_std, code_id):
     if not stored_to_std:
         return {}
-    for value in stored_to_std.values():
+    for value in list(stored_to_std.values()):
         if isinstance(value, dict):
             return stored_to_std.get(code_id, {})
         break
@@ -401,7 +410,7 @@ def split_stored_code_units(code_bytes, stored_to_std):
     pos = 0
     size = len(code_bytes)
     while pos < size:
-        raw_op = ord(code_bytes[pos])
+        raw_op = byte_value(code_bytes[pos])
         std_op = stored_to_std.get(raw_op, raw_op)
         # NetEase remaps opcode numbers across HAVE_ARGUMENT. Instruction
         # width belongs to the normalized/std opcode, not the stored byte.
@@ -786,18 +795,18 @@ def dumps_code_payload(code, use_code_tuple=True, code_bytes_split=False, code_b
                 code_const_arena, code_const_arena_decoys,
                 code_const_provider_graph, code_const_arena_limit,
                 code_field_descriptors, code_provider_context_bind)
-            return CODE_TUPLE_MAGIC + cPickle.dumps(root_tuple, 2)
+            return CODE_TUPLE_MAGIC + pickle.dumps(root_tuple, 2)
         refs = [] if code_ref_table else None
         root_tuple = pack_code_tuple(code, code_bytes_split, code_bytes_split_min, code_bytes_split_max_chunks, code_bytes_fake_chunks, 0, refs, code_tuple_field_shuffle, code_ref_wide_rows, code_ref_mask_markers, code_tuple_fragments, code_tuple_fragment_providers, code_tuple_provider_graph, code_tuple_provider_decoys, code_field_descriptors, code_provider_context_bind)
         if refs is not None and refs:
             refs.extend(make_code_ref_decoy_rows(code_ref_decoys, len(refs) + 1, code_tuple_field_shuffle, code_ref_wide_rows, code_tuple_fragments, code_tuple_fragment_providers, code_tuple_provider_graph, code_tuple_provider_decoys, code_field_descriptors, code_provider_context_bind))
             random.shuffle(refs)
             root_tuple = (CODE_REF_TABLE_MAGIC, root_tuple, tuple(refs))
-        return CODE_TUPLE_MAGIC + cPickle.dumps(root_tuple, 2)
+        return CODE_TUPLE_MAGIC + pickle.dumps(root_tuple, 2)
     return marshal.dumps(code)
 
 
-def build_code_tuple_loader_code(names):
+def build_code_tuple_loader_code(names, dialect=None):
     values = dict(names)
     for key_name in [
             'field_shape_name', 'field_resolve_name', 'field_descriptor_factory_name',
@@ -839,7 +848,45 @@ def build_code_tuple_loader_code(names):
         debug_tuple_begin = ''
         debug_tuple_pickle = ''
         debug_tuple_complete = ''
+    if dialect is None:
+        dialect = random.randrange(3)
+    # Keep the loader ABI identical while varying the source shape of small,
+    # frequently fingerprinted helpers per generated module.
+    if int(dialect) % 3 == 0:
+        code_ref_xor_body = (
+            "    return ''.join([chr(ord(%(raw_name)s) ^ ((%(seed_name)s + "
+            "%(order_item_name)s) & 255)) for %(order_item_name)s, "
+            "%(raw_name)s in enumerate(%(raw_name)s)])")
+        field_shape_body = (
+            "    try:\n"
+            "        return len(%(field_value_name)s)\n"
+            "    except Exception:\n"
+            "        return 1")
+    elif int(dialect) % 3 == 1:
+        code_ref_xor_body = (
+            "    %(raw_name)s = list(%(raw_name)s)\n"
+            "    return ''.join(chr(ord(%(raw_name)s[%(order_item_name)s]) ^ "
+            "((%(seed_name)s + %(order_item_name)s) & 255)) for "
+            "%(order_item_name)s in range(len(%(raw_name)s)))")
+        field_shape_body = (
+            "    value = %(field_value_name)s\n"
+            "    try:\n"
+            "        return len(value)\n"
+            "    except (TypeError, AttributeError):\n"
+            "        return 1")
+    else:
+        code_ref_xor_body = (
+            "    return ''.join(map(lambda %(order_item_name)s: chr(ord(%(raw_name)s[%(order_item_name)s]) ^ "
+            "((%(seed_name)s + %(order_item_name)s) & 255)), range(len(%(raw_name)s))))")
+        field_shape_body = (
+            "    value = %(field_value_name)s\n"
+            "    try:\n"
+            "        return len(value)\n"
+            "    except (TypeError, AttributeError):\n"
+            "        return 1")
     values.update({
+        'code_ref_xor_body': code_ref_xor_body % values,
+        'field_shape_body': field_shape_body % values,
         'code_tuple_magic_repr': repr(CODE_TUPLE_MAGIC),
         'code_bytes_split_magic_repr': repr(CODE_BYTES_SPLIT_MAGIC),
         'code_ref_table_magic_repr': repr(CODE_REF_TABLE_MAGIC),
@@ -890,13 +937,10 @@ def build_code_tuple_loader_code(names):
     })
     return '''def %(code_ref_xor_name)s(%(raw_name)s, %(seed_name)s):
     %(seed_name)s = max(1, int(%(seed_name)s) & 255)
-    return ''.join([chr(ord(%(raw_name)s) ^ ((%(seed_name)s + %(order_item_name)s) & 255)) for %(order_item_name)s, %(raw_name)s in enumerate(%(raw_name)s)])
+%(code_ref_xor_body)s
 
 def %(field_shape_name)s(%(field_value_name)s):
-    try:
-        return len(%(field_value_name)s)
-    except Exception:
-        return 1
+%(field_shape_body)s
 
 def %(field_resolve_name)s(%(field_provider_name)s, %(field_build_name)s, %(field_code_name)s, %(field_parent_name)s, %(field_id_name)s):
     if not (isinstance(%(field_provider_name)s, tuple) and len(%(field_provider_name)s) == 4 and %(field_provider_name)s[0] == %(code_field_descriptor_magic_repr)s):
@@ -1145,6 +1189,7 @@ def %(frag_provider_name)s(%(ref_row_name)s):
 
 def %(arena_load_name)s(%(raw_name)s, %(pickle_name)s, %(types_name)s, %(fused_map_name)s=None, %(fused_counter_name)s=None, %(fused_per_code_name)s=False):
 %(debug_arena_begin)s
+    %(lambda_code_type_name)s = (lambda: None).func_code.__class__
     %(magic_name)s = %(raw_name)s[1]
     %(code_arg)s = %(raw_name)s[2] ^ %(magic_name)s
     %(field_build_name)s = None
@@ -1347,4 +1392,4 @@ def %(code_tuple_load_name)s(%(raw_name)s, %(pickle_name)s, %(types_name)s, %(re
     %(code_arg)s = %(lambda_code_type_name)s(*%(tuple_name)s)
 %(debug_tuple_complete)s
     return %(code_arg)s
-''' % values
+''' % values\n

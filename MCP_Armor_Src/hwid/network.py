@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Minimal JSON HTTP client shared by Python 2.7 and Python 3."""
-from __future__ import absolute_import
+
 
 import json
 import time
@@ -27,4 +27,4 @@ def fetch_json(url, timeout=6, no_cache=False):
         response.close()
     if not isinstance(payload, str):
         payload = payload.decode('utf-8')
-    return json.loads(payload)
+    return json.loads(payload)\n

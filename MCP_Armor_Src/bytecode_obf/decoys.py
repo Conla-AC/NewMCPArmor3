@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Fake code objects, constants and invalid dead-bytecode payloads."""
-from __future__ import absolute_import, print_function
 
-import opcode
+
+from MCP_Armor_Src.core import py27_opcode as opcode
 import random
 import types
 
@@ -24,6 +24,7 @@ from MCP_Armor_Src.core.constants import (
 )
 
 from MCP_Armor_Src.utils.encoding import (
+    byte_char, byte_value,
     random_binary_metadata_label,
     random_bytes,
     random_ident,
@@ -78,17 +79,17 @@ def make_fake_code_object(depth, idx, taunt_text=None, fake_depth=0, nop_bloat=0
     def add_arg_op(name, arg):
         opv = opcode.opmap.get(name)
         if opv is not None:
-            poison.append(chr(opv))
+            poison.append(byte_char(opv))
             poison.append(write_oparg(arg))
 
     extra_nops = max(0, int(nop_bloat)) // (fake_depth + 1)
     extra_stops = max(0, int(stop_bloat)) // (fake_depth + 1)
     for _n in range(random.randint(1, 4) + extra_nops):
-        poison.append(chr(NOP))
+        poison.append(byte_char(NOP))
     for _s in range(random.randint(1, 3) + extra_stops):
-        poison.append(chr(stop_code))
+        poison.append(byte_char(stop_code))
     for _j in range(random.randint(1, 3)):
-        poison.append(chr(JUMP_ABSOLUTE))
+        poison.append(byte_char(JUMP_ABSOLUTE))
         poison.append(write_oparg(random.choice([0, 1, 2, random.randint(30000, 65535)])))
     for _a in range(random.randint(8, 16)):
         add_arg_op(random.choice(arg_names), random.randint(30000, 65535))
@@ -96,17 +97,17 @@ def make_fake_code_object(depth, idx, taunt_text=None, fake_depth=0, nop_bloat=0
         add_arg_op(random.choice(exc_arg_names), random.randint(0, 65535))
         noarg = opcode.opmap.get(random.choice(exc_noarg_names))
         if noarg is not None:
-            poison.append(chr(noarg))
+            poison.append(byte_char(noarg))
     for _b in range(random.randint(2, 5)):
-        poison.append(chr(random.choice([255, 254, 251, 250, 249, 248, 247])))
-        poison.append(chr(random.randint(0, 255)))
-        poison.append(chr(random.randint(0, 255)))
+        poison.append(byte_char(random.choice([255, 254, 251, 250, 249, 248, 247])))
+        poison.append(byte_char(random.randint(0, 255)))
+        poison.append(byte_char(random.randint(0, 255)))
 
-    poison = ''.join(poison)
+    poison = b''.join(poison)
     if len(poison) > 65535:
         poison = poison[:65535]
-    code_bytes = chr(JUMP_FORWARD) + write_oparg(len(poison)) + poison
-    code_bytes += chr(LOAD_CONST) + write_oparg(0) + chr(RETURN_VALUE)
+    code_bytes = byte_char(JUMP_FORWARD) + write_oparg(len(poison)) + poison
+    code_bytes += byte_char(LOAD_CONST) + write_oparg(0) + byte_char(RETURN_VALUE)
 
     consts = [
         None,
@@ -167,7 +168,7 @@ def make_fake_const(depth, idx, taunt_text=None, taunt_inner_consts=0):
     if mode == 5:
         return 'deobf_%08x_%08x' % (salt, random.randint(0, 0xffffffff))
     if mode == 6:
-        return (float((salt % 997) + depth) / 7.0, long(salt) << (idx % 5))
+        return (float((salt % 997) + depth) / 7.0, int(salt) << (idx % 5))
     return ('opcode', (salt & 255, (salt >> 3) & 255), 'not-used')
 
 
@@ -254,9 +255,9 @@ def build_dead_bad_bytecode(count, bad_units=3, nop_bloat=0, stop_bloat=0, arg_p
         if name in opcode.opmap]
 
     def add_oparg(buf, opv, arg):
-        buf.append(chr(opv))
-        buf.append(chr(arg & 255))
-        buf.append(chr((arg >> 8) & 255))
+        buf.append(byte_char(opv))
+        buf.append(byte_char(arg & 255))
+        buf.append(byte_char((arg >> 8) & 255))
 
     def add_combo(buf, mode):
         if mode == 0 and jump_ops:
@@ -268,26 +269,26 @@ def build_dead_bad_bytecode(count, bad_units=3, nop_bloat=0, stop_bloat=0, arg_p
         elif mode == 3 and exc_arg_ops:
             add_oparg(buf, random.choice(exc_arg_ops), random.randint(0, 65535))
             if exc_noarg_ops:
-                buf.append(chr(random.choice(exc_noarg_ops)))
+                buf.append(byte_char(random.choice(exc_noarg_ops)))
         elif mode == 4 and call_ops:
             add_oparg(buf, random.choice(call_ops), random.randint(30000, 65535))
         elif mode == 5 and stack_noarg_ops:
             for _x in range(random.randint(1, 3)):
-                buf.append(chr(random.choice(stack_noarg_ops)))
+                buf.append(byte_char(random.choice(stack_noarg_ops)))
         elif mode == 6 and legacy_noarg_ops:
             for _x in range(random.randint(2, 5)):
-                buf.append(chr(random.choice(legacy_noarg_ops)))
+                buf.append(byte_char(random.choice(legacy_noarg_ops)))
         else:
-            buf.append(chr(random.choice(bad_ops)))
-            buf.append(chr(random.randint(0, 255)))
-            buf.append(chr(random.randint(0, 255)))
+            buf.append(byte_char(random.choice(bad_ops)))
+            buf.append(byte_char(random.randint(0, 255)))
+            buf.append(byte_char(random.randint(0, 255)))
 
     for _ in range(max(0, count)):
         poison = []
         for _n in range(max(0, nop_bloat)):
-            poison.append(chr(NOP))
+            poison.append(byte_char(NOP))
         for _s in range(max(0, stop_bloat)):
-            poison.append(chr(stop_code))
+            poison.append(byte_char(stop_code))
         for _a in range(max(0, arg_poison)):
             if arg_ops:
                 add_oparg(poison, random.choice(arg_ops), random.randint(30000, 65535))
@@ -295,7 +296,7 @@ def build_dead_bad_bytecode(count, bad_units=3, nop_bloat=0, stop_bloat=0, arg_p
             if exc_arg_ops:
                 add_oparg(poison, random.choice(exc_arg_ops), random.randint(0, 65535))
             if exc_noarg_ops:
-                poison.append(chr(random.choice(exc_noarg_ops)))
+                poison.append(byte_char(random.choice(exc_noarg_ops)))
         for _c in range(max(0, call_poison)):
             if call_ops:
                 add_oparg(poison, random.choice(call_ops), random.randint(30000, 65535))
@@ -303,19 +304,19 @@ def build_dead_bad_bytecode(count, bad_units=3, nop_bloat=0, stop_bloat=0, arg_p
         for _combo in range(combo_rounds):
             add_combo(poison, random.randint(0, 7))
         for _j in range(max(0, bad_units)):
-            poison.append(chr(random.choice(bad_ops)))
-            poison.append(chr(random.randint(0, 255)))
-            poison.append(chr(random.randint(0, 255)))
+            poison.append(byte_char(random.choice(bad_ops)))
+            poison.append(byte_char(random.randint(0, 255)))
+            poison.append(byte_char(random.randint(0, 255)))
         random_noise = random.randint(0, max(0, bad_units))
         for _r in range(random_noise):
-            poison.append(chr(random.randint(240, 255)))
-        poison = ''.join(poison)
+            poison.append(byte_char(random.randint(240, 255)))
+        poison = b''.join(poison)
         if JUMP_FORWARD is not None and len(poison) <= 65535:
-            chunks.append(chr(JUMP_FORWARD))
-            chunks.append(chr(len(poison) & 255))
-            chunks.append(chr((len(poison) >> 8) & 255))
+            chunks.append(byte_char(JUMP_FORWARD))
+            chunks.append(byte_char(len(poison) & 255))
+            chunks.append(byte_char((len(poison) >> 8) & 255))
             chunks.append(poison)
-            chunks.append(chr(NOP))
+            chunks.append(byte_char(NOP))
         else:
             chunks.append(poison)
-    return ''.join(chunks)
+    return b''.join(chunks)\n

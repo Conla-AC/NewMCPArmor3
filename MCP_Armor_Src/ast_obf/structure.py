@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Call linearization, source rendering and scheduling transforms."""
-from __future__ import absolute_import, print_function
+
 
 import ast
 import random
@@ -241,7 +241,7 @@ class SourceEmitter(object):
                 text += self.line(level, 'else:')
                 text += self.block(node.orelse, level + 1)
             return text
-        if isinstance(node, ast.TryExcept):
+        if hasattr(ast, 'TryExcept') and isinstance(node, ast.TryExcept):
             text = self.line(level, 'try:')
             text += self.block(node.body, level + 1)
             for handler in node.handlers:
@@ -250,21 +250,53 @@ class SourceEmitter(object):
                 text += self.line(level, 'else:')
                 text += self.block(node.orelse, level + 1)
             return text
-        if isinstance(node, ast.TryFinally):
+        if hasattr(ast, 'TryFinally') and isinstance(node, ast.TryFinally):
             text = self.line(level, 'try:')
             text += self.block(node.body, level + 1)
             text += self.line(level, 'finally:')
             text += self.block(node.finalbody, level + 1)
             return text
+        if hasattr(ast, 'Try') and isinstance(node, ast.Try):
+            text = self.line(level, 'try:')
+            text += self.block(node.body, level + 1)
+            for handler in node.handlers:
+                text += self.except_handler(handler, level)
+            if node.orelse:
+                text += self.line(level, 'else:')
+                text += self.block(node.orelse, level + 1)
+            if node.finalbody:
+                text += self.line(level, 'finally:')
+                text += self.block(node.finalbody, level + 1)
+            return text
         if isinstance(node, ast.With):
-            text = 'with %s' % self.expr(node.context_expr)
-            if node.optional_vars is not None:
-                text += ' as %s' % self.expr(node.optional_vars)
+            # Python 3 stores one or more with-items; Python 2 stores the
+            # legacy context_expr/optional_vars pair.
+            if getattr(node, 'items', None) is not None:
+                parts = []
+                for item in node.items:
+                    part = self.expr(item.context_expr)
+                    if item.optional_vars is not None:
+                        part += ' as ' + self.expr(item.optional_vars)
+                    parts.append(part)
+                text = 'with ' + ', '.join(parts)
+            else:
+                text = 'with %s' % self.expr(node.context_expr)
+                if node.optional_vars is not None:
+                    text += ' as %s' % self.expr(node.optional_vars)
             text += ':'
             return self.line(level, text) + self.block(node.body, level + 1)
         if isinstance(node, ast.Raise):
-            parts = [self.expr(part) for part in (node.type, node.inst, node.tback) if part is not None]
-            return self.line(level, 'raise' if not parts else 'raise ' + ', '.join(parts))
+            if hasattr(node, 'type'):
+                # Python 2 Raise(type, inst, tback)
+                parts = [self.expr(part) for part in (node.type, node.inst, node.tback) if part is not None]
+                return self.line(level, 'raise' if not parts else 'raise ' + ', '.join(parts))
+            # Python 3 Raise(exc, cause)
+            if node.exc is not None:
+                text = 'raise ' + self.expr(node.exc)
+                if getattr(node, 'cause', None) is not None:
+                    text += ' from ' + self.expr(node.cause)
+                return self.line(level, text)
+            return self.line(level, 'raise')
         if isinstance(node, ast.Assert):
             text = 'assert ' + self.expr(node.test)
             if node.msg is not None:
@@ -305,7 +337,7 @@ class SourceEmitter(object):
         else:
             head = 'except ' + self.expr(node.type)
             if node.name is not None:
-                head += ' as ' + (node.name if isinstance(node.name, basestring) else self.expr(node.name))
+                head += ' as ' + (node.name if isinstance(node.name, str) else self.expr(node.name))
             head += ':'
         return self.line(level, head) + self.block(node.body, level + 1)
 
@@ -313,38 +345,49 @@ class SourceEmitter(object):
         return node.name if node.asname is None else '%s as %s' % (node.name, node.asname)
 
     def arguments(self, node):
-        args = [arg.id if isinstance(arg, ast.Name) else self.expr_without_noise(arg) for arg in node.args]
+        args = [getattr(arg, 'arg', None) or
+                (arg.id if isinstance(arg, ast.Name) else self.expr_without_noise(arg))
+                for arg in node.args]
         defaults = [self.expr(default) for default in node.defaults]
         if defaults:
             offset = len(args) - len(defaults)
             for index, default in enumerate(defaults):
                 args[offset + index] = args[offset + index] + '=' + default
         if node.vararg:
-            args.append('*' + node.vararg)
+            args.append('*' + (getattr(node.vararg, 'arg', None) or str(node.vararg)))
         if node.kwarg:
-            args.append('**' + node.kwarg)
+            args.append('**' + (getattr(node.kwarg, 'arg', None) or str(node.kwarg)))
         return ', '.join(args)
 
     def expr(self, node):
         if node is None:
             return 'None'
+        constant_type = getattr(ast, 'Constant', None)
         if isinstance(node, ast.Name):
             if self.parenthesis_noise and random.randint(0, 3) == 0:
                 return '((%s))' % node.id
             return node.id
+        if constant_type is not None and isinstance(node, constant_type) and isinstance(node.value, ast.AST):
+            return self.expr(node.value)
+        if constant_type is not None and isinstance(node, constant_type) and not isinstance(node.value, str):
+            return repr(node.value)
         if isinstance(node, ast.Num):
             return repr(node.n)
-        if isinstance(node, ast.Str):
-            return repr(node.s)
+        if isinstance(node, ast.Str) or (constant_type is not None and isinstance(node, constant_type) and isinstance(node.value, str)):
+            return repr(node.s if isinstance(node, ast.Str) else node.value)
         if isinstance(node, ast.Attribute):
             return '%s.%s' % (self.expr(node.value), node.attr)
+        if hasattr(ast, 'Starred') and isinstance(node, ast.Starred):
+            return '*' + self.expr(node.value)
         if isinstance(node, ast.Call):
             args = [self.expr(arg) for arg in node.args]
             args.extend(self.keyword(keyword) for keyword in node.keywords)
-            if node.starargs is not None:
-                args.append('*' + self.expr(node.starargs))
-            if node.kwargs is not None:
-                args.append('**' + self.expr(node.kwargs))
+            starargs = getattr(node, 'starargs', None)
+            kwargs = getattr(node, 'kwargs', None)
+            if starargs is not None:
+                args.append('*' + self.expr(starargs))
+            if kwargs is not None:
+                args.append('**' + self.expr(kwargs))
             return '%s(%s)' % (self.expr(node.func), ', '.join(args))
         if isinstance(node, ast.keyword):
             return self.keyword(node)
@@ -395,7 +438,7 @@ class SourceEmitter(object):
         return '%s=%s' % (node.arg, self.expr(node.value))
 
     def slice(self, node):
-        if isinstance(node, ast.Index):
+        if hasattr(ast, 'Index') and isinstance(node, ast.Index):
             return self.expr(node.value)
         if isinstance(node, ast.Slice):
             lower = '' if node.lower is None else self.expr(node.lower)
@@ -403,9 +446,9 @@ class SourceEmitter(object):
             if node.step is None:
                 return lower + ':' + upper
             return lower + ':' + upper + ':' + self.expr(node.step)
-        if isinstance(node, ast.ExtSlice):
+        if hasattr(ast, 'ExtSlice') and isinstance(node, ast.ExtSlice):
             return ', '.join(self.slice(dim) for dim in node.dims)
-        if isinstance(node, ast.Ellipsis):
+        if hasattr(ast, 'Ellipsis') and isinstance(node, ast.Ellipsis):
             return '...'
         return self.expr(node)
 
@@ -575,7 +618,10 @@ class SourceScheduleTransformer(ast.NodeTransformer):
         ])
         if getattr(node, 'name', None) in skip_names:
             return True
-        unsafe = (ast.Yield, ast.Lambda, ast.Global, ast.TryExcept, ast.TryFinally, ast.With)
+        unsafe = tuple(cls for cls in (ast.Yield, ast.Lambda, ast.Global,
+                                       getattr(ast, 'TryExcept', None),
+                                       getattr(ast, 'TryFinally', None), ast.With)
+                       if cls is not None)
         for child in ast.walk(node):
             if isinstance(child, unsafe):
                 return True
@@ -624,4 +670,4 @@ class SourceScheduleTransformer(ast.NodeTransformer):
 def schedule_source_execution(tree, max_exprs=4, window=8):
     tree = SourceScheduleTransformer(max_exprs, window).visit(tree)
     ast.fix_missing_locations(tree)
-    return tree
+    return tree\n

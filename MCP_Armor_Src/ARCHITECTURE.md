@@ -36,7 +36,19 @@ Imports must not point upward or sideways against this graph. In particular:
 2. Add new transforms to the narrowest matching feature module.
 3. Add characterization tests before changing tightly coupled algorithms.
 4. Do not use wildcard imports or package-level side effects.
-5. Keep all backend modules valid on CPython 2.7.18.
+5. Keep host/orchestration modules valid on CPython 3.13.
+6. Keep NetEase code-object transforms valid inside the isolated CPython
+   2.7 target worker; never marshal a Python 3 code object into target output.
+
+## Runtime boundary
+
+The CLI, configuration, filesystem, static checker, project analysis and
+packaging layers run on CPython 3.13. NetEase still embeds CPython 2.7, whose
+`CodeType`, opcode stream and marshal format are incompatible with Python 3.
+Bytecode jobs are therefore dispatched through `compat/target_backend.py` to
+the narrow `compat/py27_worker.py` process. Source-only jobs remain entirely
+inside the Python 3.13 host. `MCPARMOR_PY27` may override the target worker
+interpreter path.
 
 ## Source VM
 
@@ -55,7 +67,7 @@ Packed records have two storage forms: compressed text-safe records for source
 output, and raw binary constants for an enclosing bytecode loader.
 
 Full mode selects every supported function and enables loops, while disabling
-duplicate bytecode CFG expansion around the VM runtime. Payloads decode lazily
+duplicate ByteCode_Flow expansion around the VM runtime. Payloads decode lazily
 on first call, opcode tokens are resolved to handlers once, and temporary
 registers are reused. Generator expressions, closure factories, `with`,
 `try/finally`, and generators remain native until their semantics can be
@@ -100,4 +112,4 @@ The broader trace/profile/module/timing and HMAC CodeType checks live behind
 the separate `experimental_anti_debug` option. They are also disabled by
 default because embedded Python runtimes may expose nonstandard tracing state.
 Both layers run only during payload hydration and install no callback or Tick
-hook.
+hook.\n

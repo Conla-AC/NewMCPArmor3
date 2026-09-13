@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Safe interprocedural predicates for closed same-module call groups."""
-from __future__ import absolute_import
+
 
 import ast
 import random
+import sys
 
 from MCP_Armor_Src.ast_obf.literals import source_docstring_node
 from MCP_Armor_Src.utils.encoding import random_ident
@@ -34,11 +35,15 @@ class _PredicateDefinitionCollector(ast.NodeVisitor):
                 not self.functions):
             token = random.randint(1, 0x7fffffff)
             hidden = random_ident('flow')
+            lane = random_ident('lane')
+            while lane == hidden:
+                lane = random_ident('lane')
             private = random.randint(1, 0x7fffffff)
             mul = random.randint(0x10001, 0x7fffffff) | 1
             seal = (((token ^ private) * mul) & 0x7fffffff)
             spec = {
-                'token': token, 'hidden': hidden, 'private': private,
+                'token': token, 'hidden': hidden, 'lane': lane,
+                'private': private,
                 'mul': mul, 'seal': seal,
             }
             node._mcp_source_flow_spec = spec
@@ -71,26 +76,39 @@ class InternalPredicateTransformer(ast.NodeTransformer):
         self.functions.pop()
         if spec is None:
             return node
-        node.args.args.append(ast.Name(id=spec['hidden'], ctx=ast.Param()))
+        if sys.version_info[0] >= 3:
+            node.args.args.append(ast.arg(arg=spec['hidden'], annotation=None))
+            node.args.args.append(ast.arg(arg=spec['lane'], annotation=None))
+        else:
+            node.args.args.append(ast.Name(id=spec['hidden'], ctx=ast.Param()))
+            node.args.args.append(ast.Name(id=spec['lane'], ctx=ast.Param()))
         calculated = ast.BinOp(
             left=ast.BinOp(
                 left=ast.BinOp(
-                    left=ast.Name(id=spec['hidden'], ctx=ast.Load()),
+                    left=ast.BinOp(
+                        left=ast.Name(id=spec['hidden'], ctx=ast.Load()),
+                        op=ast.BitXor(),
+                        right=ast.Name(id=spec['lane'], ctx=ast.Load())),
                     op=ast.BitXor(), right=ast.Num(n=spec['private'])),
                 op=ast.Mult(), right=ast.Num(n=spec['mul'])),
             op=ast.BitAnd(), right=ast.Num(n=0x7fffffff))
+        error_call = ast.Call(
+            func=ast.Name(id='ValueError', ctx=ast.Load()), args=[],
+            keywords=[], starargs=None, kwargs=None)
+        if sys.version_info[0] >= 3:
+            raise_node = ast.Raise(exc=error_call, cause=None)
+        else:
+            raise_node = ast.Raise(type=error_call, inst=None, tback=None)
         guard = ast.If(
             test=ast.Compare(
                 left=calculated, ops=[ast.NotEq()],
                 comparators=[ast.Num(n=spec['seal'])]),
-            body=[ast.Raise(type=ast.Call(
-                func=ast.Name(id='ValueError', ctx=ast.Load()), args=[],
-                keywords=[], starargs=None, kwargs=None), inst=None,
-                tback=None)], orelse=[])
+            body=[raise_node], orelse=[])
         doc = source_docstring_node(node.body)
         node.body.insert(1 if doc is not None else 0, guard)
-        node._mcp_source_hidden_args = 1
+        node._mcp_source_hidden_args = 2
         node._mcp_source_flow_arg = spec['hidden']
+        node._mcp_source_flow_lane = spec['lane']
         node._mcp_source_flow_token = spec['token']
         return node
 
@@ -106,11 +124,15 @@ class InternalPredicateTransformer(ast.NodeTransformer):
                 (self.classes[-1], node.func.attr))
         if spec is None:
             return node
-        value = _token_expr(spec['token'])
+        lane_value = random.randint(1, 0x7fffffff)
+        value = _token_expr(spec['token'] ^ lane_value)
+        lane = _token_expr(lane_value)
         if getattr(node, 'starargs', None) is not None or node.keywords:
             node.keywords.append(ast.keyword(arg=spec['hidden'], value=value))
+            node.keywords.append(ast.keyword(arg=spec['lane'], value=lane))
         else:
             node.args.append(value)
+            node.args.append(lane)
         return node
 
 
@@ -121,4 +143,4 @@ def inject_internal_predicates(tree):
         return tree, 0
     tree = InternalPredicateTransformer(collector).visit(tree)
     ast.fix_missing_locations(tree)
-    return tree, collector.count
+    return tree, collector.count\n

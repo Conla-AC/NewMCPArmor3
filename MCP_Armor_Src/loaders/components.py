@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Import facades, code capsules and loader cleanup components."""
-from __future__ import absolute_import, print_function
+
 
 import base64
-import cPickle
+import pickle
 import random
 
 from MCP_Armor_Src.core.constants import (
@@ -172,7 +172,7 @@ def build_loader_decoy_tuple_code(count, taunt_text, names, import_codes):
              fake_value_name, random.randint(10000, 999999),
              fake_value_name, fake_marker_name, fake_arg_name)
         fake_code = compile(fake_source, '<loader-decoy>', 'exec', 0, True)
-        fake_blob = base64.b64encode(CODE_TUPLE_MAGIC + cPickle.dumps(pack_code_tuple(fake_code), 2))
+        fake_blob = base64.b64encode(CODE_TUPLE_MAGIC + pickle.dumps(pack_code_tuple(fake_code), 2))
         guard = random.randint(10000, 999999)
         lines.append('def %s(%s=%r):\n    %s = %d\n    if %s == -1:\n        %s = %s(%s)\n        %s = %s(%s)\n        %s = %s(%s)\n        %s = getattr(%s, %s(%s))(%s)\n        if isinstance(%s, str) and getattr(%s, %s(%s))(%r):\n            %s = getattr(%s, %s(%s))(%s[%d:])\n            return getattr(%s, %s(%s))(*%s)\n    return %s\n' % (
             func_name, raw_name, fake_blob,
@@ -456,4 +456,4 @@ def build_loader_cleanup_code(names, enabled=False, debug=False):
         lines.append('    %s = None' % names[local_name])
     if debug:
         lines.append(debug_print_code(True, 'MCP Loader ReferenceCleanupComplete', 4))
-    return '\n'.join(lines)
+    return '\n'.join(lines)\n

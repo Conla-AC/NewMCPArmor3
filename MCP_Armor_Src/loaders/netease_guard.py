@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """NetEase-native loader guards and behavior-pack UUID binding."""
-from __future__ import absolute_import, print_function
+
 
 import json
 import os
 import random
 
-from MCP_Armor_Src.utils.encoding import random_ident, visual_int
+from MCP_Armor_Src.utils.encoding import byte_char, byte_value, random_ident, visual_int
 from MCP_Armor_Src.utils.chacha import chacha8
 
 
@@ -43,7 +43,7 @@ def find_behavior_pack_uuid(start_path, max_depth=12):
 def _encoded_bytes(value):
     seed = random.randint(1, 255)
     row = tuple(
-        ord(ch) ^ ((seed + index * 131) & 255)
+        byte_value(ch) ^ ((seed + index * 131) & 255)
         for index, ch in enumerate(value)
     )
     return repr(row), seed
@@ -108,8 +108,8 @@ def build_netease_key_guard(module_name, key_name, key, manifest_uuid):
     lower_label = _decode_call(decode, 'lower')
     map_get_label = _decode_call(decode, 'get')
     expected_label = _decode_call(decode, expected_uuid)
-    probe_key = ''.join(chr(random.randint(0, 255)) for _unused in range(32))
-    probe_data = ''.join(chr(random.randint(0, 255)) for _unused in range(
+    probe_key = ''.join(byte_char(random.randint(0, 255)) for _unused in range(32))
+    probe_data = ''.join(byte_char(random.randint(0, 255)) for _unused in range(
         random.randint(13, 31)))
     probe_expected = chacha8(probe_data, probe_key)
     probe_key_label = repr(probe_key)
@@ -117,7 +117,7 @@ def build_netease_key_guard(module_name, key_name, key, manifest_uuid):
     probe_expected_label = repr(probe_expected)
     binding_seed = random.randint(1, 255)
     stored_key = ''.join(
-        chr(ord(char) ^ ((ord(expected_uuid[index % len(expected_uuid)]) +
+        byte_char(byte_value(char) ^ ((byte_value(expected_uuid[index % len(expected_uuid)]) +
                           binding_seed + index * 41) & 255))
         for index, char in enumerate(key)
     )
@@ -248,4 +248,4 @@ def %(guard)s(%(module)s, %(key)s, %(scope)s):
            binding_seed=visual_int(binding_seed),
            scramble_seed=visual_int(scramble_seed), key_name=key_name,
            module_name=module_name, key_repr=repr(stored_key))
-    return source
+    return source\n

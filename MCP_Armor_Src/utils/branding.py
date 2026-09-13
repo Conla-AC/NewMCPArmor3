@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """MCP Shiled output header generation."""
-from __future__ import absolute_import, print_function
+
 
 import io
 import re
 import time
 import tokenize
+import calendar
 
 from MCP_Armor_Src.core.constants import (
     MCP_SHILED_ART,
@@ -13,11 +14,34 @@ from MCP_Armor_Src.core.constants import (
 )
 
 
-def mcp_shiled_header(mode='docstring'):
+def normalize_output_date(value=None):
+    """Return a stable ``YYYY-MM-DD HH:MM:SS`` watermark timestamp."""
+    text = str(value or '2012-03-15').strip()
+    match = re.match(r'^(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$', text)
+    if not match:
+        raise ValueError('output_date must be YYYY-MM-DD or YYYY-MM-DD HH:MM:SS')
+    year, month, day = [int(item) for item in match.group(1, 2, 3)]
+    hour = int(match.group(4) or 0)
+    minute = int(match.group(5) or 0)
+    second = int(match.group(6) or 0)
+    # Let time.mktime validate calendar ranges while keeping the emitted text
+    # deterministic and independent of the host's current clock.
+    calendar.timegm((year, month, day, hour, minute, second, 0, 0, 0))
+    return '%04d-%02d-%02d %02d:%02d:%02d' % (
+        year, month, day, hour, minute, second)
+
+
+def output_date_timestamp(value=None):
+    text = normalize_output_date(value)
+    parts = [int(item) for item in re.split('[-: ]', text)]
+    return calendar.timegm((parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], 0, 0, 0))
+
+
+def mcp_shiled_header(mode='docstring', output_date=None):
     mode = str(mode or 'docstring').strip().lower()
     body = list(MCP_SHILED_ART.splitlines())
     body.append('MCP Shiled V%s OBFED_TIME:%s' % (
-        MCP_SHILED_VERSION, time.strftime('%Y-%m-%d %H:%M:%S')))
+        MCP_SHILED_VERSION, normalize_output_date(output_date)))
     if mode == 'comment':
         lines = ['# ' + line for line in body]
     elif mode == 'docstring':
@@ -81,12 +105,12 @@ def _source_prologue_end(data):
     return protected_end
 
 
-def add_mcp_shiled_header(data, mode='docstring'):
+def add_mcp_shiled_header(data, mode='docstring', output_date=None):
     header_marker = "lambda : '''\n" + MCP_SHILED_ART.splitlines()[0]
     comment_marker = '# ' + MCP_SHILED_ART.splitlines()[0]
     if header_marker in data[:4096] or comment_marker in data[:4096]:
         return data
-    header = mcp_shiled_header(mode)
+    header = mcp_shiled_header(mode, output_date)
     lines = data.splitlines(True)
     insert_at = 0
     if lines and lines[0].startswith('#!'):
@@ -95,4 +119,4 @@ def add_mcp_shiled_header(data, mode='docstring'):
         insert_at += 1
     if str(mode or 'docstring').strip().lower() == 'docstring':
         insert_at = max(insert_at, _source_prologue_end(data))
-    return ''.join(lines[:insert_at]) + header + ''.join(lines[insert_at:])
+    return ''.join(lines[:insert_at]) + header + ''.join(lines[insert_at:])\n

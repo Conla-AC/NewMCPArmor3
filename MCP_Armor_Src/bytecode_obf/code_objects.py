@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Recursive CodeType transformations and lazy-function extraction."""
-from __future__ import absolute_import, print_function
+
 
 import fnmatch
 import os
@@ -36,20 +36,32 @@ from MCP_Armor_Src.bytecode_obf.instructions import (
     prepend_legal_entry_noise,
 )
 
-from MCP_Armor_Src.bytecode_obf.cfg.transform import (
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.transform import (
     apply_conditional_edge_proxies,
 )
-from MCP_Armor_Src.bytecode_obf.cfg.block_seeds import (
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.block_seeds import (
     apply_block_seed_flow,
 )
-from MCP_Armor_Src.bytecode_obf.cfg.block_shuffle import (
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.block_shuffle import (
     apply_basic_block_shuffle,
 )
-from MCP_Armor_Src.bytecode_obf.cfg.decoy_islands import (
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.decoy_islands import (
     apply_decoy_islands,
 )
-from MCP_Armor_Src.bytecode_obf.cfg.dispatcher import (
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.dispatcher import (
     apply_state_dispatcher,
+)
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.slot_permutation import (
+    permute_local_slots,
+)
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.semantic_templates import (
+    apply_semantic_templates,
+)
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.validator import (
+    validate_code_object_layout,
+)
+from MCP_Armor_Src.bytecode_obf.bytecode_flow.abstract_frame import (
+    frame_analysis_gate,
 )
 
 from MCP_Armor_Src.bytecode_obf.model import (
@@ -68,6 +80,7 @@ from MCP_Armor_Src.core.constants import (
 )
 
 from MCP_Armor_Src.utils.encoding import (
+    byte_char, byte_value,
     can_poison_real_code_name,
     random_binary_metadata_label,
     random_bytes,
@@ -79,18 +92,18 @@ from MCP_Armor_Src.utils.encoding import (
 def append_tail_noise(co, count, bad_count=0, bad_units=3, nop_bloat=0, stop_bloat=0, arg_poison=0, exception_poison=0, call_poison=0, code_bytes=None):
     tail = []
     for _ in range(max(0, count)):
-        tail.append(chr(NOP))
-        tail.append(chr(LOAD_CONST))
-        tail.append('\x00\x00')
-        tail.append(chr(POP_TOP))
+        tail.append(byte_char(NOP))
+        tail.append(byte_char(LOAD_CONST))
+        tail.append(b'\x00\x00')
+        tail.append(byte_char(POP_TOP))
         if JUMP_FORWARD is not None:
-            tail.append(chr(JUMP_FORWARD))
-            tail.append('\x00\x00')
+            tail.append(byte_char(JUMP_FORWARD))
+            tail.append(b'\x00\x00')
     if bad_count > 0:
         tail.append(build_dead_bad_bytecode(bad_count, bad_units, nop_bloat, stop_bloat, arg_poison, exception_poison, call_poison))
     if not tail:
         return co.co_code if code_bytes is None else code_bytes
-    return (co.co_code if code_bytes is None else code_bytes) + ''.join(tail)
+    return (co.co_code if code_bytes is None else code_bytes) + b''.join(tail)
 
 
 def lazy_capsule_valid_arg_name(name):
@@ -241,9 +254,9 @@ def make_lnotab_noise(lnotab, count):
         return lnotab
     noise = []
     for _ in range(count):
-        noise.append(chr(random.randint(0, 2)))
-        noise.append(chr(random.randint(0, 255)))
-    return lnotab + ''.join(noise)
+        noise.append(byte_char(random.randint(0, 2)))
+        noise.append(byte_char(random.randint(0, 255)))
+    return lnotab + b''.join(noise)
 
 
 def make_structural_const_salts(count, depth, code_name, taunt_text=None):
@@ -332,12 +345,19 @@ def slot_mirage_varnames(co, varnames, limit=8):
     return tuple(out)
 
 
-def obfuscate_code_object(co, const_noise, tail_noise, depth=0, filename_mode='keep', bad_bytecode=0, bad_units=3, nop_bloat=0, stop_bloat=0, arg_poison=0, exception_poison=0, call_poison=0, metadata_poison=False, adaptive_strength=False, adaptive_max_scale=4, taunt_text=None, taunt_inner_consts=0, split_gates=False, split_interval=18, split_bad_units=2, split_nop_bloat=2, fake_code_objects=0, ghost_names=0, split_adaptive=False, loop_shadow_gates=False, const_swamp=0, real_block_reorder=False, real_block_reorder_limit=2, safe_dead_blocks=False, safe_dead_interval=20, safe_dead_width=4, safe_dead_limit=6, oparg_poison=False, opaque_predicates=False, opaque_interval=28, opaque_width=3, opaque_limit=4, fake_code_nop_bloat=0, fake_code_stop_bloat=0, root_const_swamp=0, metadata_binary=False, metadata_name_poison=False, index_pool_shuffle=False, index_pool_mirrors=0, const_ref_chains=0, bytecode_stack_pad=0, bytecode_lnotab_noise=0, bytecode_const_salts=0, bytecode_name_chaff=0, bytecode_entry_noise=0, bytecode_exception_decoys=0, bytecode_stack_noise=False, bytecode_stack_noise_interval=18, bytecode_stack_noise_limit=6, bytecode_jump_inversion=False, bytecode_jump_inversion_limit=4, bytecode_jump_trampolines=False, bytecode_jump_trampoline_limit=4, bytecode_strategy_variation=False, bytecode_strategy_seed=0, bytecode_delayed_const_access=False, bytecode_delayed_const_limit=3, bytecode_extended_arg_prefix=False, bytecode_extended_arg_interval=11, bytecode_extended_arg_limit=6, slot_mirage=False, slot_mirage_limit=8, bytecode_cfg_flow=False, bytecode_cfg_flow_ratio=35, bytecode_cfg_flow_max_edges=6, bytecode_cfg_block_seeds=False, bytecode_cfg_block_seed_ratio=35, bytecode_cfg_block_seed_max_blocks=64, bytecode_cfg_block_shuffle=False, bytecode_cfg_block_shuffle_ratio=35, bytecode_cfg_block_shuffle_max_blocks=192, bytecode_decoy_islands=False, bytecode_decoy_island_ratio=20, bytecode_decoy_island_limit=2, bytecode_decoy_island_width=4, bytecode_decoy_island_growth=15):
-    experimental_allowed = depth > 0 and is_function_code(co)
+def obfuscate_code_object(co, const_noise, tail_noise, depth=0, filename_mode='keep', bad_bytecode=0, bad_units=3, nop_bloat=0, stop_bloat=0, arg_poison=0, exception_poison=0, call_poison=0, metadata_poison=False, adaptive_strength=False, adaptive_max_scale=4, taunt_text=None, taunt_inner_consts=0, split_gates=False, split_interval=18, split_bad_units=2, split_nop_bloat=2, fake_code_objects=0, ghost_names=0, split_adaptive=False, loop_shadow_gates=False, const_swamp=0, real_block_reorder=False, real_block_reorder_limit=2, safe_dead_blocks=False, safe_dead_interval=20, safe_dead_width=4, safe_dead_limit=6, oparg_poison=False, opaque_predicates=False, opaque_interval=28, opaque_width=3, opaque_limit=4, fake_code_nop_bloat=0, fake_code_stop_bloat=0, root_const_swamp=0, metadata_binary=False, metadata_name_poison=False, index_pool_shuffle=False, index_pool_mirrors=0, const_ref_chains=0, bytecode_stack_pad=0, bytecode_lnotab_noise=0, bytecode_const_salts=0, bytecode_name_chaff=0, bytecode_entry_noise=0, bytecode_exception_decoys=0, bytecode_stack_noise=False, bytecode_stack_noise_interval=18, bytecode_stack_noise_limit=6, bytecode_jump_inversion=False, bytecode_jump_inversion_limit=4, bytecode_jump_trampolines=False, bytecode_jump_trampoline_limit=4, bytecode_strategy_variation=False, bytecode_strategy_seed=0, bytecode_delayed_const_access=False, bytecode_delayed_const_limit=3, bytecode_extended_arg_prefix=False, bytecode_extended_arg_interval=11, bytecode_extended_arg_limit=6, slot_mirage=False, slot_mirage_limit=8, bytecode_flow=False, bytecode_flow_ratio=35, bytecode_flow_max_edges=6, bytecode_flow_block_seeds=False, bytecode_flow_block_seed_ratio=35, bytecode_flow_block_seed_max_blocks=64, bytecode_flow_block_shuffle=False, bytecode_flow_block_shuffle_ratio=35, bytecode_flow_block_shuffle_max_blocks=192, bytecode_decoy_islands=False, bytecode_decoy_island_ratio=20, bytecode_decoy_island_limit=2, bytecode_decoy_island_width=4, bytecode_decoy_island_growth=15, bytecode_flow_loop_dispatch=False):
+    # Closure bytecode uses LOAD_DEREF/STORE_DEREF indexes whose meaning is
+    # shared by co_varnames, co_cellvars and co_freevars.  Generated string
+    # decoder factories deliberately create such closures.  Treat them as a
+    # compatibility boundary: recursive constants and metadata may still be
+    # protected, but no instruction/index rewrite may touch the live closure.
+    closure_sensitive = bool(co.co_freevars or co.co_cellvars)
+    experimental_allowed = (
+        depth > 0 and is_function_code(co) and not closure_sensitive)
     consts = []
     for const in co.co_consts:
         if isinstance(const, types.CodeType):
-            const = obfuscate_code_object(const, max(0, const_noise - 1 + (depth % 2)), tail_noise, depth + 1, filename_mode, bad_bytecode, bad_units, nop_bloat, stop_bloat, arg_poison, exception_poison, call_poison, metadata_poison, adaptive_strength, adaptive_max_scale, taunt_text, taunt_inner_consts, split_gates, split_interval, split_bad_units, split_nop_bloat, fake_code_objects, ghost_names, split_adaptive, loop_shadow_gates, const_swamp, real_block_reorder, real_block_reorder_limit, safe_dead_blocks, safe_dead_interval, safe_dead_width, safe_dead_limit, oparg_poison, opaque_predicates, opaque_interval, opaque_width, opaque_limit, fake_code_nop_bloat, fake_code_stop_bloat, root_const_swamp, metadata_binary, metadata_name_poison, index_pool_shuffle, index_pool_mirrors, const_ref_chains, bytecode_stack_pad, bytecode_lnotab_noise, bytecode_const_salts, bytecode_name_chaff, bytecode_entry_noise, bytecode_exception_decoys, bytecode_stack_noise, bytecode_stack_noise_interval, bytecode_stack_noise_limit, bytecode_jump_inversion, bytecode_jump_inversion_limit, bytecode_jump_trampolines, bytecode_jump_trampoline_limit, bytecode_strategy_variation, bytecode_strategy_seed, bytecode_delayed_const_access, bytecode_delayed_const_limit, bytecode_extended_arg_prefix, bytecode_extended_arg_interval, bytecode_extended_arg_limit, slot_mirage, slot_mirage_limit, bytecode_cfg_flow, bytecode_cfg_flow_ratio, bytecode_cfg_flow_max_edges, bytecode_cfg_block_seeds, bytecode_cfg_block_seed_ratio, bytecode_cfg_block_seed_max_blocks, bytecode_cfg_block_shuffle, bytecode_cfg_block_shuffle_ratio, bytecode_cfg_block_shuffle_max_blocks, bytecode_decoy_islands, bytecode_decoy_island_ratio, bytecode_decoy_island_limit, bytecode_decoy_island_width, bytecode_decoy_island_growth)
+            const = obfuscate_code_object(const, max(0, const_noise - 1 + (depth % 2)), tail_noise, depth + 1, filename_mode, bad_bytecode, bad_units, nop_bloat, stop_bloat, arg_poison, exception_poison, call_poison, metadata_poison, adaptive_strength, adaptive_max_scale, taunt_text, taunt_inner_consts, split_gates, split_interval, split_bad_units, split_nop_bloat, fake_code_objects, ghost_names, split_adaptive, loop_shadow_gates, const_swamp, real_block_reorder, real_block_reorder_limit, safe_dead_blocks, safe_dead_interval, safe_dead_width, safe_dead_limit, oparg_poison, opaque_predicates, opaque_interval, opaque_width, opaque_limit, fake_code_nop_bloat, fake_code_stop_bloat, root_const_swamp, metadata_binary, metadata_name_poison, index_pool_shuffle, index_pool_mirrors, const_ref_chains, bytecode_stack_pad, bytecode_lnotab_noise, bytecode_const_salts, bytecode_name_chaff, bytecode_entry_noise, bytecode_exception_decoys, bytecode_stack_noise, bytecode_stack_noise_interval, bytecode_stack_noise_limit, bytecode_jump_inversion, bytecode_jump_inversion_limit, bytecode_jump_trampolines, bytecode_jump_trampoline_limit, bytecode_strategy_variation, bytecode_strategy_seed, bytecode_delayed_const_access, bytecode_delayed_const_limit, bytecode_extended_arg_prefix, bytecode_extended_arg_interval, bytecode_extended_arg_limit, slot_mirage, slot_mirage_limit, bytecode_flow, bytecode_flow_ratio, bytecode_flow_max_edges, bytecode_flow_block_seeds, bytecode_flow_block_seed_ratio, bytecode_flow_block_seed_max_blocks, bytecode_flow_block_shuffle, bytecode_flow_block_shuffle_ratio, bytecode_flow_block_shuffle_max_blocks, bytecode_decoy_islands, bytecode_decoy_island_ratio, bytecode_decoy_island_limit, bytecode_decoy_island_width, bytecode_decoy_island_growth, bytecode_flow_loop_dispatch)
         consts.append(const)
     scale = 1
     if adaptive_strength:
@@ -361,19 +381,26 @@ def obfuscate_code_object(co, const_noise, tail_noise, depth=0, filename_mode='k
     consts.extend(make_structural_const_salts(bytecode_const_salts * (scale if adaptive_strength else 1), depth, co.co_name, taunt_text))
     true_const_index = len(consts)
     consts.append(True)
+    # Transaction snapshot for the current function.  Recursive child code
+    # objects and append-only decoys are safe to retain if a later instruction
+    # transform fails final validation.
+    fallback_consts = list(consts)
     varnames = list(co.co_varnames)
+    names = list(co.co_names)
     code_bytes = co.co_code
     dispatch_changed = 0
-    if bytecode_cfg_flow and experimental_allowed:
+    if bytecode_flow and experimental_allowed:
         code_bytes, consts, varnames, dispatch_changed = apply_state_dispatcher(
             co, co.co_code, consts, varnames,
-            bytecode_cfg_flow_ratio,
-            max(8, min(128, bytecode_cfg_flow_max_edges * 8)))
+            bytecode_flow_ratio,
+            max(8, min(128, bytecode_flow_max_edges * 8)),
+            bytecode_flow_loop_dispatch,
+            names)
     junk_local_index = None
     nlocals = len(varnames) if dispatch_changed else co.co_nlocals
-    names = list(co.co_names)
     names.extend(make_ghost_names(ghost_names * (scale if adaptive_strength else 1), taunt_text))
     names.extend(make_name_chaff(names, bytecode_name_chaff * (scale if adaptive_strength else 1), taunt_text))
+    fallback_names = list(names)
     filename = co.co_filename
     if filename_mode == 'mem':
         filename = '<mem>'
@@ -433,7 +460,7 @@ def obfuscate_code_object(co, const_noise, tail_noise, depth=0, filename_mode='k
         code_bytes = bytecode_opaque_predicates(
             code_bytes, opaque_interval, opaque_width, opaque_limit,
             true_const_index, junk_local_index, predicate_local_index)
-    if split_gates:
+    if split_gates and not closure_sensitive:
         code_bytes = bytecode_split_gates(code_bytes, split_interval, split_bad_units, split_nop_bloat, taunt_text, split_adaptive, loop_shadow_gates and experimental_allowed)
     if local_jump_trampolines and experimental_allowed:
         code_bytes = bytecode_jump_trampoline_chains(code_bytes, local_trampoline_limit * (scale if adaptive_strength else 1), len(co.co_code))
@@ -446,43 +473,126 @@ def obfuscate_code_object(co, const_noise, tail_noise, depth=0, filename_mode='k
         code_bytes = bytecode_stack_equivalent_noise(code_bytes, noise_interval, local_stack_limit * (scale if adaptive_strength else 1), true_const_index)
     if bytecode_exception_decoys and experimental_allowed:
         code_bytes = prepend_exception_decoys(code_bytes, bytecode_exception_decoys * (scale if adaptive_strength else 1), true_const_index)
-    if bytecode_entry_noise:
+    if bytecode_entry_noise and not closure_sensitive:
         code_bytes = prepend_legal_entry_noise(code_bytes, bytecode_entry_noise * (scale if adaptive_strength else 1), true_const_index, junk_local_index)
     if bytecode_decoy_islands and experimental_allowed:
         code_bytes, _decoy_island_count = apply_decoy_islands(
             co, code_bytes, true_const_index,
             bytecode_decoy_island_ratio, bytecode_decoy_island_limit,
             bytecode_decoy_island_width, bytecode_decoy_island_growth,
-            bytecode_strategy_seed)
-    if index_pool_mirrors:
+            bytecode_strategy_seed, consts, varnames)
+    if index_pool_mirrors and not closure_sensitive:
         consts, names = make_index_pool_mirrors(consts, names, index_pool_mirrors * (scale if adaptive_strength else 1))
-    if index_pool_shuffle:
+    if index_pool_shuffle and not closure_sensitive:
         consts, names, varnames, code_bytes = apply_index_pool_shuffle(co, code_bytes, consts, names, varnames)
     if bytecode_extended_arg_prefix and experimental_allowed:
         code_bytes = bytecode_extended_arg_prefixes(
             code_bytes, bytecode_extended_arg_interval,
             bytecode_extended_arg_limit * (scale if adaptive_strength else 1))
-    if slot_mirage:
+    if (bytecode_flow and experimental_allowed and
+            int(bytecode_flow_ratio or 0) >= 40):
+        code_bytes, varnames, _template_count = apply_semantic_templates(
+            co, code_bytes, consts, varnames,
+            max(1, min(8, int(bytecode_flow_max_edges or 1))),
+            bytecode_strategy_seed ^ (depth * 0x27d4eb2d))
+        if _template_count:
+            nlocals = len(varnames)
+    if slot_mirage and not closure_sensitive:
+        code_bytes, varnames, _slot_count = permute_local_slots(
+            co, code_bytes, varnames, slot_mirage_limit,
+            bytecode_strategy_seed ^ (depth * 0x45d9f3b))
         varnames = slot_mirage_varnames(co, varnames, slot_mirage_limit)
-    if bytecode_cfg_block_seeds and experimental_allowed:
+    # Physically permute the verified ByteCode_Flow blocks before seed/proxy expansion.
+    # Running this only after those expansions made the shuffle contingent on
+    # every injected helper block remaining analyzable, so a single ordinary
+    # Python 2 print/loop construct silently preserved source order.
+    if bytecode_flow_block_shuffle and experimental_allowed:
+        code_bytes, _cfg_moved = apply_basic_block_shuffle(
+            co, code_bytes, bytecode_flow_block_shuffle_ratio,
+            bytecode_flow_block_shuffle_max_blocks, consts, varnames)
+    # Seed propagation and edge proxies are complementary.  The former guards
+    # whole basic-block transitions; the latter adds a second, edge-specific
+    # state gate.  Each pass validates its emitted graph and rolls itself back
+    # for unsupported stack/exception shapes.
+    if bytecode_flow_block_seeds and experimental_allowed:
         code_bytes, consts, varnames, cfg_changed = apply_block_seed_flow(
             co, code_bytes, consts, varnames,
-            bytecode_cfg_block_seed_ratio,
-            bytecode_cfg_block_seed_max_blocks)
+            bytecode_flow_block_seed_ratio,
+            bytecode_flow_block_seed_max_blocks)
         if cfg_changed:
             nlocals = len(varnames)
-    elif bytecode_cfg_flow and experimental_allowed:
-        code_bytes, consts, varnames, cfg_changed = apply_conditional_edge_proxies(
+    if bytecode_flow and experimental_allowed:
+        code_bytes, consts, varnames, cfg_proxy_changed = apply_conditional_edge_proxies(
             co, code_bytes, consts, varnames,
-            bytecode_cfg_flow_ratio, bytecode_cfg_flow_max_edges)
-        if cfg_changed:
+            bytecode_flow_ratio, bytecode_flow_max_edges)
+        if cfg_proxy_changed:
             nlocals = len(varnames)
-    if bytecode_cfg_block_shuffle and experimental_allowed:
-        code_bytes, _cfg_moved = apply_basic_block_shuffle(
-            co, code_bytes, bytecode_cfg_block_shuffle_ratio,
-            bytecode_cfg_block_shuffle_max_blocks)
+        # High-strength profiles get a second, narrower edge-proxy pass.  It
+        # operates on the already seeded stream, so a decompiler must recover
+        # two independent state layers.  The transform is transactional and
+        # graph-verified; unsupported/oversized streams remain at layer one.
+        if (cfg_proxy_changed and bytecode_flow_ratio >= 75 and
+                bytecode_flow_max_edges >= 4):
+            layered_bytes, layered_consts, layered_vars, layered_changed = \
+                apply_conditional_edge_proxies(
+                    co, code_bytes, consts, varnames,
+                    max(25, bytecode_flow_ratio // 2),
+                    max(2, bytecode_flow_max_edges // 2))
+            if layered_changed and len(layered_bytes) <= 65535:
+                code_bytes, consts, varnames = (
+                    layered_bytes, layered_consts, layered_vars)
+                nlocals = len(varnames)
+        # A second verified layout round is reserved for the strongest
+        # profiles.  Running it after state/edge expansion makes the physical
+        # order and logical route independent; both transforms are
+        # transactional and therefore leave the previous valid stream intact
+        # when the enlarged graph exceeds CPython 2.7 limits.
+        if bytecode_flow_ratio >= 90:
+            if bytecode_flow_block_shuffle:
+                rerouted, _moved = apply_basic_block_shuffle(
+                    co, code_bytes,
+                    max(35, bytecode_flow_block_shuffle_ratio // 2),
+                    bytecode_flow_block_shuffle_max_blocks,
+                    consts, varnames)
+                if rerouted != code_bytes and len(rerouted) <= 65535:
+                    code_bytes = rerouted
+            if bytecode_decoy_islands:
+                decoy_bytes, _islands = apply_decoy_islands(
+                    co, code_bytes, true_const_index,
+                    max(30, bytecode_decoy_island_ratio // 2),
+                    max(1, bytecode_decoy_island_limit // 2),
+                    bytecode_decoy_island_width,
+                    bytecode_decoy_island_growth,
+                    bytecode_strategy_seed ^ 0x5a17,
+                    consts, varnames)
+                if decoy_bytes != code_bytes and len(decoy_bytes) <= 65535:
+                    code_bytes = decoy_bytes
     stacksize = max(co.co_stacksize, 2) + (1 if delayed_const_changed else 0) + max(0, min(4096, int(bytecode_stack_pad or 0))) + (min(depth, 8) if bytecode_stack_pad else 0)
     lnotab = make_lnotab_noise(co.co_lnotab, bytecode_lnotab_noise * (scale if adaptive_strength else 1))
+    # Append-only constant/name decoys preserve every original index.  Skip a
+    # full IR pass when this function's instruction stream and local layout did
+    # not change; recursive child functions have already validated themselves.
+    needs_validation = code_bytes != co.co_code
+    validation = (validate_code_object_layout(
+        co, code_bytes, consts, names, varnames, stacksize)
+        if needs_validation else None)
+    flow_frame_required = bool(
+        needs_validation and experimental_allowed and
+        (bytecode_flow or bytecode_flow_block_seeds or
+         bytecode_flow_block_shuffle or bytecode_decoy_islands))
+    frame_valid = True
+    if flow_frame_required:
+        frame_valid, _frame_result = frame_analysis_gate(
+            co, code_bytes, consts, varnames)
+    if ((validation is not None and not validation.valid) or
+            not frame_valid):
+        code_bytes = co.co_code
+        consts = fallback_consts
+        names = fallback_names
+        varnames = list(co.co_varnames)
+        nlocals = co.co_nlocals
+        stacksize = max(co.co_stacksize, 2) + max(
+            0, min(4096, int(bytecode_stack_pad or 0)))
     return rebuild_code(co, consts, code_bytes, filename, name, firstlineno, names, varnames, nlocals, stacksize, lnotab)
 
 
@@ -519,13 +629,13 @@ def obfuscate_code_with_options(code, opts, depth=0):
         opts.bytecode_extended_arg_prefix,
         opts.bytecode_extended_arg_interval,
         opts.bytecode_extended_arg_limit, opts.slot_mirage,
-        opts.slot_mirage_limit, opts.bytecode_cfg_flow,
-        opts.bytecode_cfg_flow_ratio, opts.bytecode_cfg_flow_max_edges,
-        opts.bytecode_cfg_block_seeds, opts.bytecode_cfg_block_seed_ratio,
-        opts.bytecode_cfg_block_seed_max_blocks,
-        opts.bytecode_cfg_block_shuffle,
-        opts.bytecode_cfg_block_shuffle_ratio,
-        opts.bytecode_cfg_block_shuffle_max_blocks,
+        opts.slot_mirage_limit, opts.bytecode_flow,
+        opts.bytecode_flow_ratio, opts.bytecode_flow_max_edges,
+        opts.bytecode_flow_block_seeds, opts.bytecode_flow_block_seed_ratio,
+        opts.bytecode_flow_block_seed_max_blocks,
+        opts.bytecode_flow_block_shuffle,
+        opts.bytecode_flow_block_shuffle_ratio,
+        opts.bytecode_flow_block_shuffle_max_blocks,
         opts.bytecode_decoy_islands, opts.bytecode_decoy_island_ratio,
         opts.bytecode_decoy_island_limit, opts.bytecode_decoy_island_width,
-        opts.bytecode_decoy_island_growth)
+        opts.bytecode_decoy_island_growth, opts.bytecode_flow_loop_dispatch)\n

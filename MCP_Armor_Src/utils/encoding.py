@@ -1,26 +1,100 @@
 # -*- coding: utf-8 -*-
 """Random identifiers, payload ciphers and encoded row helpers."""
-from __future__ import absolute_import, print_function
+
 
 import base64
-import opcode
+from MCP_Armor_Src.core import py27_opcode as opcode
+import keyword
 import random
 import re
 import string
+import sys
 import tokenize
 import zlib
 
 try:
-    import StringIO
+    import io
 except ImportError:
     import io as StringIO
 
 from MCP_Armor_Src.utils.chacha import chacha8
 
 
+# Keep generated loader bindings lowercase.  Besides matching the ProGuard
+# style audit, this avoids mixed-case names being mistaken for semantic API
+# symbols by downstream scanners once a large CodeTuple loader exceeds the
+# first 26 short identifiers.
+_SHORT_IDENT_ALPHABET = string.ascii_lowercase
+
+
+def short_ident(index):
+    """Return compact case-mixed identifiers.
+
+    The sequence is ``a..z``, ``A..Z``, ``aa..aZ``, ``ba..``.  Keeping the
+    first 52 values to one character gives the Rename layer more compact
+    output while remaining valid and deterministic on Python 2 and 3.
+    """
+    value = int(index)
+    if value < 0:
+        raise ValueError('identifier index must be non-negative')
+    if value < len(_SHORT_IDENT_ALPHABET):
+        return _SHORT_IDENT_ALPHABET[value]
+    value += 1
+    chars = []
+    while value:
+        value, remainder = divmod(value - 1, len(_SHORT_IDENT_ALPHABET))
+        chars.append(_SHORT_IDENT_ALPHABET[remainder])
+    return ''.join(reversed(chars))
+
+
+try:
+    import builtins as _identifier_builtins
+except ImportError:
+    import __builtin__ as _identifier_builtins
+
+_SHORT_IDENT_RESERVED = set(keyword.kwlist)
+_SHORT_IDENT_RESERVED.update(('print', 'exec', 'raw_input', 'long', 'unicode', 'basestring',
+                               'True', 'False', 'None'))
+_SHORT_IDENT_RESERVED.update(name for name in dir(_identifier_builtins)
+                             if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name))
+_SHORT_IDENT_INDEX = 0
+_SHORT_IDENT_USED = set()
+
+
 def random_ident(prefix='_or'):
-    width = random.randint(10, 18)
-    return '_0x' + ''.join(random.choice('0123456789abcdef') for _ in range(width))
+    """Return the next ProGuard-style short identifier.
+
+    ``prefix`` remains accepted for callers that use semantic labels, but the
+    emitted identifier intentionally contains no prefix or hexadecimal marker.
+    """
+    global _SHORT_IDENT_INDEX
+    while True:
+        value = short_ident(_SHORT_IDENT_INDEX)
+        _SHORT_IDENT_INDEX += 1
+        if value in _SHORT_IDENT_RESERVED or value in _SHORT_IDENT_USED:
+            continue
+        _SHORT_IDENT_USED.add(value)
+        return value
+
+
+def reserve_short_identifiers(names):
+    """Prevent generated short names from shadowing input-source symbols."""
+    for name in names or ():
+        if isinstance(name, str) and re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+            _SHORT_IDENT_RESERVED.add(name)
+
+
+def reserve_source_identifiers(source):
+    """Collect NAME tokens without interpreting strings or comments."""
+    if isinstance(source, bytes):
+        source = source.decode('utf-8', 'replace')
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        reserve_short_identifiers(
+            token_text for token_type, token_text, _start, _end, _line in tokens
+            if token_type == tokenize.NAME)
+    except (tokenize.TokenError, IndentationError, UnicodeError, TypeError):
+        return
 
 
 def visual_int(value):
@@ -76,7 +150,8 @@ def obfuscate_reserved_generated_identifiers(source):
     Some older loader templates emitted their internal helper names directly
     into source (for example ``_mcp_index_shuffle``). The final text pass keeps
     one mapping per build, so code references and exact string-based getattr
-    references remain consistent while the output exposes only ``_0x...``
+    references remain consistent while the output uses the shared short-name
+    allocator.
     names. This intentionally runs only on generated output, never on AST
     metadata attributes used by the transformer itself.
     """
@@ -93,7 +168,19 @@ def obfuscate_reserved_generated_identifiers(source):
         cursor += len(line)
 
     try:
-        tokens = tokenize.generate_tokens(StringIO.StringIO(source).readline)
+        token_source = source
+        if sys.version_info[0] < 3 and isinstance(source, str):
+            token_source = source.decode('utf-8')
+        tokens = list(tokenize.generate_tokens(io.StringIO(token_source).readline))
+        # This pass runs after AST transforms have rendered generated helper
+        # names back to source.  A short replacement must not reuse any name
+        # already present in the module, especially a function-local binding
+        # such as ``i`` used by a later ``for i in ...``.  Otherwise a global
+        # decoder alias becomes local at runtime and an earlier branch raises
+        # UnboundLocalError before the loop initializes it.
+        for token_type, token_text, _start, _end, _line in tokens:
+            if token_type == tokenize.NAME:
+                used.add(token_text)
         for token_type, token_text, start, end, _line in tokens:
             if token_type != tokenize.NAME:
                 continue
@@ -152,7 +239,7 @@ def build_loader_debug_parts(enabled, mode):
         'debug_execute_done': ('ModuleExecuteComplete', 4),
     }
     return dict((key, debug_print_code(enabled, '%s %s' % (prefix, value[0]), value[1]))
-                for key, value in labels.items())
+                for key, value in list(labels.items()))
 
 
 def xor_code_list(codes, key):
@@ -163,7 +250,36 @@ def xor_code_list(codes, key):
 
 
 def random_bytes(size):
-    return ''.join(chr(random.randrange(0, 256)) for _ in range(size))
+    """Return opaque random bytes on the Python 3 host.
+
+    The generated NetEase Python 2 source accepts the resulting ``b''``
+    literals, while keeping compression/cipher operations binary-safe on the
+    host runtime.
+    """
+    values = [random.randrange(0, 256) for _ in range(size)]
+    if sys.version_info[0] < 3:
+        return ''.join(chr(value) for value in values)
+    return bytes(values)
+
+
+def byte_value(value):
+    """Return an integer for either a Python 2-style byte or Python 3 byte."""
+    return value if isinstance(value, int) else ord(value)
+
+
+def byte_char(value):
+    """Build one binary byte without relying on Python 2 ``chr`` semantics."""
+    value = int(value) & 255
+    if sys.version_info[0] < 3:
+        return chr(value)
+    return bytes((value,))
+
+
+def bytes_from_values(values):
+    values = [int(value) & 255 for value in values]
+    if sys.version_info[0] < 3:
+        return ''.join(chr(value) for value in values)
+    return bytes(values)
 
 
 def chunk_text(text, min_size, max_size):
@@ -190,34 +306,41 @@ def rows_repr(rows):
     lines = []
     for tag, idx, value in rows:
         lines.append('    (%r, %d, %r),' % (tag, idx, value))
+    # Emit actual source newlines. A literal backslash-n makes the generated
+    # loader fail parsing as soon as a table has more than one row.
     return '\n'.join(lines)
 
 
 def xor_data(data, key):
-    out = []
-    klen = len(key)
-    for idx, ch in enumerate(data):
-        out.append(chr(ord(ch) ^ ord(key[idx % klen])))
-    return ''.join(out)
+    data = data if isinstance(data, (bytes, bytearray)) else str(data).encode('latin1')
+    key = key if isinstance(key, (bytes, bytearray)) else str(key).encode('latin1')
+    return bytes_from_values(byte_value(ch) ^ byte_value(key[idx % len(key)])
+                             for idx, ch in enumerate(data))
 
 
 def add_data(data, key):
-    out = []
-    klen = len(key)
-    for idx, ch in enumerate(data):
-        out.append(chr((ord(ch) + ord(key[idx % klen])) & 255))
-    return ''.join(out)
+    data = data if isinstance(data, (bytes, bytearray)) else str(data).encode('latin1')
+    key = key if isinstance(key, (bytes, bytearray)) else str(key).encode('latin1')
+    return bytes_from_values((byte_value(ch) + byte_value(key[idx % len(key)])) & 255
+                             for idx, ch in enumerate(data))
 
 
 def roll_data(data, key):
-    out = []
-    klen = len(key)
-    for idx, ch in enumerate(data):
-        out.append(chr(ord(ch) ^ ((ord(key[idx % klen]) + idx) & 255)))
-    return ''.join(out)
+    data = data if isinstance(data, (bytes, bytearray)) else str(data).encode('latin1')
+    key = key if isinstance(key, (bytes, bytearray)) else str(key).encode('latin1')
+    return bytes_from_values(byte_value(ch) ^ ((byte_value(key[idx % len(key)]) + idx) & 255)
+                             for idx, ch in enumerate(data))
 
 
 def encode_payload(raw, key, level, chacha_key=None):
+    if sys.version_info[0] >= 3 and isinstance(raw, str):
+        raw = raw.encode('utf-8')
+    elif sys.version_info[0] < 3:
+        try:
+            if isinstance(raw, unicode):
+                raw = raw.encode('utf-8')
+        except NameError:
+            pass
     ops = [4, 0, 1, 2, 3]
     data = zlib.compress(raw, level)
     data = xor_data(data, key)
@@ -297,10 +420,12 @@ def encode_multilayer_rows(rows):
     for tag, idx, value in rows:
         for _retry in range(64):
             row_key = random.randint(1, 255)
-            encoded = ''.join(chr((ord(ch) + ((row_key + pos) & 255)) & 255) for pos, ch in enumerate(value))[::-1]
+            encoded = bytes_from_values(
+                (byte_value(ch) + ((row_key + pos) & 255)) & 255
+                for pos, ch in enumerate(value))[::-1]
             preview = repr((tag, idx ^ row_key, encoded, row_key)).lower()
             if 'exec' not in preview and 'eval' not in preview:
                 break
         out.append((tag, idx ^ row_key, encoded, row_key))
     random.shuffle(out)
-    return out
+    return out\n

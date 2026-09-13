@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Versioned exact NetEase Python import whitelist snapshot."""
-from __future__ import absolute_import
+
 
 
 RULESET_VERSION = 'netease-python-whitelist-2026-08-01-r2'
@@ -175,4 +175,4 @@ if len(OFFICIAL_MODULES) != OFFICIAL_MODULE_COUNT:
 
 
 def is_whitelisted_module(module_name):
-    return bool(module_name and module_name in OFFICIAL_MODULES)
+    return bool(module_name and module_name in OFFICIAL_MODULES)\n

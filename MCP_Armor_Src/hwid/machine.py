@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Stable Windows machine fingerprint generation."""
-from __future__ import absolute_import
+
 
 import hashlib
 import os
@@ -14,7 +14,7 @@ def _windows_machine_guid():
         try:
             import winreg
         except ImportError:
-            import _winreg as winreg
+            import winreg as winreg
         access = winreg.KEY_READ | getattr(winreg, 'KEY_WOW64_64KEY', 0)
         key = winreg.OpenKey(
             winreg.HKEY_LOCAL_MACHINE,
@@ -48,4 +48,4 @@ def machine_fingerprint():
 
 
 def encrypted_hwid():
-    return xor_encrypt_hex(machine_fingerprint())
+    return xor_encrypt_hex(machine_fingerprint())\n

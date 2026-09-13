@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Preset expansion and validated runtime options."""
-from __future__ import absolute_import, print_function
+
 
 from MCP_Armor_Src.core.constants import (
     PRESETS,
@@ -12,16 +12,33 @@ class Options(object):
 
 
 def merge_options(args):
-    preset = PRESETS[args.preset].copy()
+    # The UI's lightweight YAML writer may serialize an unset preset as
+    # ``None`` (capitalized) while the CLI parser uses ``none``.  Normalize
+    # both forms before indexing the preset table so a saved run_config.yml
+    # remains portable between UI and CLI builds.
+    preset_name = args.preset
+    if preset_name is None:
+        preset_name = 'none'
+    else:
+        preset_name = str(preset_name).strip().lower()
+        if preset_name in ('', 'none', 'null'):
+            preset_name = 'none'
+    if preset_name not in PRESETS:
+        raise ValueError('unknown preset: %s' % preset_name)
+    preset = PRESETS[preset_name].copy()
     opts = Options()
-    for name, value in preset.items():
+    for name, value in list(preset.items()):
         setattr(opts, name, value)
     opts.debug = bool(args.debug)
+    opts.python27 = getattr(args, 'python27', None)
+    opts.static_check = bool(getattr(args, 'static_check', False))
     opts.emit_pyc = bool(args.emit_pyc)
     opts.resource_profile = str(args.resource_profile or 'balanced')
     opts.header_mode = str(args.header_mode or 'docstring').strip().lower()
     if opts.header_mode not in ('comment', 'docstring'):
         raise ValueError('header_mode must be comment or docstring')
+    opts.output_date = str(getattr(args, 'output_date', None) or '2012-03-15').strip()
+    opts.write_rename_mapping = bool(getattr(args, 'write_rename_mapping', False))
     opts.key_len = args.key_len
     opts.payload_cipher = args.payload_cipher
     opts.anti_debug = bool(args.anti_debug)
@@ -120,7 +137,7 @@ def merge_options(args):
     opts.bytecode_decoy_island_width = max(
         2, min(8, int(args.bytecode_decoy_island_width or 0)))
     opts.bytecode_decoy_island_growth = max(
-        1, min(30, int(args.bytecode_decoy_island_growth or 0)))
+        1, min(100, int(args.bytecode_decoy_island_growth or 0)))
     opts.oparg_poison = bool(args.oparg_poison or opts.bytecode_taken_jump_poison)
     opts.bytecode_opaque_predicates = args.bytecode_opaque_predicates
     opts.bytecode_opaque_interval = args.bytecode_opaque_interval
@@ -141,15 +158,16 @@ def merge_options(args):
     opts.bytecode_jump_inversion_limit = args.bytecode_jump_inversion_limit
     opts.bytecode_jump_trampolines = args.bytecode_jump_trampolines
     opts.bytecode_jump_trampoline_limit = args.bytecode_jump_trampoline_limit
-    opts.bytecode_cfg_flow = bool(args.bytecode_cfg_flow)
-    opts.bytecode_cfg_flow_ratio = max(0, min(100, int(args.bytecode_cfg_flow_ratio or 0)))
-    opts.bytecode_cfg_flow_max_edges = max(0, min(64, int(args.bytecode_cfg_flow_max_edges or 0)))
-    opts.bytecode_cfg_block_seeds = bool(args.bytecode_cfg_block_seeds)
-    opts.bytecode_cfg_block_seed_ratio = max(0, min(100, int(args.bytecode_cfg_block_seed_ratio or 0)))
-    opts.bytecode_cfg_block_seed_max_blocks = max(2, min(256, int(args.bytecode_cfg_block_seed_max_blocks or 0)))
-    opts.bytecode_cfg_block_shuffle = bool(args.bytecode_cfg_block_shuffle)
-    opts.bytecode_cfg_block_shuffle_ratio = max(0, min(100, int(args.bytecode_cfg_block_shuffle_ratio or 0)))
-    opts.bytecode_cfg_block_shuffle_max_blocks = max(2, min(512, int(args.bytecode_cfg_block_shuffle_max_blocks or 0)))
+    opts.bytecode_flow = bool(args.bytecode_flow)
+    opts.bytecode_flow_ratio = max(0, min(100, int(args.bytecode_flow_ratio or 0)))
+    opts.bytecode_flow_max_edges = max(0, min(64, int(args.bytecode_flow_max_edges or 0)))
+    opts.bytecode_flow_loop_dispatch = bool(args.bytecode_flow_loop_dispatch)
+    opts.bytecode_flow_block_seeds = bool(args.bytecode_flow_block_seeds)
+    opts.bytecode_flow_block_seed_ratio = max(0, min(100, int(args.bytecode_flow_block_seed_ratio or 0)))
+    opts.bytecode_flow_block_seed_max_blocks = max(2, min(256, int(args.bytecode_flow_block_seed_max_blocks or 0)))
+    opts.bytecode_flow_block_shuffle = bool(args.bytecode_flow_block_shuffle)
+    opts.bytecode_flow_block_shuffle_ratio = max(0, min(100, int(args.bytecode_flow_block_shuffle_ratio or 0)))
+    opts.bytecode_flow_block_shuffle_max_blocks = max(2, min(512, int(args.bytecode_flow_block_shuffle_max_blocks or 0)))
     opts.bytecode_strategy_variation = args.bytecode_strategy_variation
     opts.bytecode_strategy_seed = args.bytecode_strategy_seed
     opts.bytecode_delayed_const_access = args.bytecode_delayed_const_access
@@ -163,10 +181,11 @@ def merge_options(args):
     opts.source_schedule = args.source_schedule
     opts.source_schedule_max_exprs = args.source_schedule_max_exprs
     opts.source_schedule_window = args.source_schedule_window
-    opts.source_local_rename = args.source_local_rename
-    opts.source_local_rename_max = args.source_local_rename_max
-    opts.source_name_obfuscation = args.source_name_obfuscation
-    opts.source_name_obfuscation_max = args.source_name_obfuscation_max
+    opts.source_global_rename = bool(args.source_global_rename)
+    opts.source_module_rename = bool(args.source_module_rename)
+    opts.source_function_split = bool(getattr(args, 'source_function_split', False))
+    opts.source_module_rename_exclude = list(
+        args.source_module_rename_exclude or ())
     opts.source_string_split = args.source_string_split
     opts.source_string_split_parts = args.source_string_split_parts
     opts.source_string_xor = args.source_string_xor
@@ -189,8 +208,21 @@ def merge_options(args):
     opts.source_comment_noise_count = args.source_comment_noise_count
     opts.source_dead_flow = args.source_dead_flow
     opts.source_dead_flow_blocks = args.source_dead_flow_blocks
-    opts.source_vm_full = bool(args.source_vm_full)
-    opts.source_vm = bool(args.source_vm or opts.source_vm_full)
+    # Keep the two VM classes independently addressable. VM-IR selects the
+    # full coverage profile; VM extension retains the older selective wrapper
+    # and may be combined with VM-IR to keep its carrier extensions enabled.
+    opts.source_vm_ir = bool(getattr(args, 'source_vm_ir', False))
+    opts.source_vm_extension = bool(
+        getattr(args, 'source_vm_extension', False) or args.source_vm)
+    opts.source_vm_full = bool(args.source_vm_full or opts.source_vm_ir)
+    # VM-IR/extension are explicit AST-layer switches. Never infer them from
+    # bytecode settings or stale preset state; a false value must stay false.
+    if not bool(getattr(args, 'source_vm_ir', False)):
+        opts.source_vm_ir = False
+    if not bool(getattr(args, 'source_vm_extension', False)) and not bool(getattr(args, 'source_vm', False)):
+        opts.source_vm_extension = False
+    opts.source_vm_full = bool(getattr(args, 'source_vm_full', False) or opts.source_vm_ir)
+    opts.source_vm = bool(opts.source_vm_extension or opts.source_vm_full)
     opts.source_vm_ratio = max(0, min(100, int(args.source_vm_ratio or 0)))
     opts.source_vm_min_ops = max(1, int(args.source_vm_min_ops or 1))
     opts.source_vm_max_ops = max(opts.source_vm_min_ops, int(args.source_vm_max_ops or opts.source_vm_min_ops))
@@ -203,7 +235,8 @@ def merge_options(args):
     if opts.source_flow_hardening:
         opts.source_vm = True
     opts.source_project_analysis = bool(
-        args.source_project_analysis or opts.source_flow_hardening)
+        args.source_project_analysis or opts.source_flow_hardening or
+        opts.source_global_rename or opts.source_module_rename)
     opts.source_internal_predicates = bool(
         args.source_internal_predicates or opts.source_flow_hardening)
     opts.source_internal_predicate_ratio = max(
@@ -233,27 +266,25 @@ def merge_options(args):
         opts.source_vm_max_ops = max(2000, opts.source_vm_max_ops)
         opts.source_vm_max_functions = 0
         opts.source_vm_allow_loops = True
-        # The VM already owns control flow. Reapplying CFG expansion to its
+        # The VM already owns control flow. Reapplying ByteCode_Flow to its
         # generated runtime only multiplies size and startup cost.
         opts.const_noise = min(1, opts.const_noise)
         opts.tail_noise = 0
-        opts.bytecode_cfg_flow = False
-        opts.bytecode_cfg_block_seeds = False
-        opts.bytecode_cfg_block_shuffle = False
+        opts.bytecode_flow = False
+        opts.bytecode_flow_block_seeds = False
+        opts.bytecode_flow_block_shuffle = False
         opts.bytecode_jump_inversion = False
         opts.bytecode_jump_trampolines = False
         opts.bytecode_stack_noise = False
         opts.bytecode_delayed_const_access = False
         opts.bytecode_extended_arg_prefix = False
     opts.source_tuple_arg_decoys = max(0, min(8, int(args.source_tuple_arg_decoys or 0)))
-    if opts.source_vm and not opts.source_vm_full and not opts.source_tuple_arg_decoys:
-        opts.source_tuple_arg_decoys = 1
-    opts.source_dotzero_relay = bool(
-        args.source_dotzero_relay or (opts.source_vm and not opts.source_vm_full))
-    opts.source_default_capsule = bool(
-        args.source_default_capsule or (opts.source_vm and not opts.source_vm_full))
-    opts.source_identity_weave = bool(
-        args.source_identity_weave or (opts.source_vm and not opts.source_vm_full))
+    # VM classes are independent switches. Do not implicitly enable tuple
+    # decoys, dotzero relay, default capsules or Identity Weave when VM-IR or
+    # the legacy VM extension is selected; each option must be explicit.
+    opts.source_dotzero_relay = bool(args.source_dotzero_relay)
+    opts.source_default_capsule = bool(args.source_default_capsule)
+    opts.source_identity_weave = bool(args.source_identity_weave)
     opts.source_identity_ratio = max(0, min(100, int(args.source_identity_ratio or 0)))
     opts.source_identity_max = max(0, min(64, int(args.source_identity_max or 0)))
     opts.source_identity_variation = bool(args.source_identity_variation)
@@ -279,11 +310,14 @@ def merge_options(args):
     opts.source_only = args.source_only or []
     opts.ast_exclude = args.ast_exclude or []
     opts.compact_cpickle_loader = (args.loader_mode == 'cpickle')
-    # A deserialized CodeType carries the offline CPython opcode bytes.  NetEase
-    # must receive its V1 mapping directly; unlike source mode, the engine does
-    # not compile this payload for us.
-    opts.loader_mode = (
-        'netease-func' if opts.compact_cpickle_loader else args.loader_mode)
+    opts.loader_vm = bool(getattr(args, 'loader_vm', False))
+    opts.loader_dialect = str(getattr(args, 'loader_dialect', 'auto') or 'auto')
+    if opts.loader_dialect not in ('auto', '0', '1', '2'):
+        raise ValueError('loader_dialect must be auto, 0, 1 or 2')
+    # cPickle is a payload/loader format, not a target-runtime declaration.
+    # Select the concrete function-loader branch after opcode_runtime has been
+    # normalized below; STD must never inherit the NetEase opcode alphabet.
+    opts.loader_mode = args.loader_mode
     opts.lazy_function_capsules = bool(args.lazy_function_capsules)
     opts.lazy_capsule_ratio = max(0, min(100, int(args.lazy_capsule_ratio or 0)))
     opts.lazy_capsule_max_functions = max(0, min(256, int(args.lazy_capsule_max_functions or 0)))
@@ -332,21 +366,31 @@ def merge_options(args):
     opts.code_unit_arena = args.code_unit_arena and opts.code_global_arena
     opts.code_unit_arena_decoys = args.code_unit_arena_decoys if opts.code_unit_arena else 0
     opts.code_operand_graph = args.code_operand_graph and opts.code_unit_arena
-    opts.code_const_arena = args.code_const_arena and opts.code_global_arena
+    # A provider graph has no useful execution path without the arena that
+    # owns its referenced constants.  Treat the graph switch as the user
+    # intent and enable the minimal storage dependency automatically.
+    opts.code_const_arena = bool(args.code_const_arena or args.code_const_provider_graph)
     opts.code_const_arena_decoys = args.code_const_arena_decoys if opts.code_const_arena else 0
-    opts.code_const_provider_graph = args.code_const_provider_graph and opts.code_const_arena
+    opts.code_const_provider_graph = bool(args.code_const_provider_graph and opts.code_const_arena)
     opts.code_const_arena_limit = max(0, int(args.code_const_arena_limit or 0))
     opts.filename_mode = args.filename_mode
     opts.inner_opcode_tunnel = args.inner_opcode_tunnel
     opts.opcode_runtime = args.opcode_runtime
     opts.mcs_opmap_version = args.mcs_opmap_version
     if opts.compact_cpickle_loader:
-        # This mode executes a deserialized offline CodeType directly inside
-        # NetEase.  Make the required V1 mapping an invariant so an unchecked
-        # UI opcode box cannot silently recreate the native-exit bug.
-        opts.opcode_replacement = True
-        opts.opcode_runtime = 'mcs'
-        opts.mcs_opmap_version = 1
+        # The same compact cPickle outer loader supports two execution targets:
+        # NetEase receives its mapped bytecode directly, while native Python
+        # 2.7 must retain the standard opcode alphabet.  The compact loader has
+        # no generic runtime opcode restoration table, so STD replacement is
+        # deliberately disabled instead of emitting a CodeType that crashes
+        # the interpreter with STATUS_ACCESS_VIOLATION/illegal instruction.
+        if opts.opcode_runtime == 'mcs':
+            opts.loader_mode = 'netease-func'
+            opts.opcode_replacement = True
+            opts.mcs_opmap_version = 1
+        else:
+            opts.loader_mode = 'function'
+            opts.opcode_replacement = False
         opts.runtime_opcode_layer = False
         opts.per_code_runtime_opcode = False
         opts.inner_opcode_tunnel = False
@@ -354,8 +398,8 @@ def merge_options(args):
         opts.runtime_opcode_layer = False
         opts.per_code_runtime_opcode = False
         opts.inner_opcode_tunnel = False
-    if (opts.source_linearize_calls or opts.source_schedule or opts.source_local_rename or opts.source_dead_flow or opts.source_vm or opts.control_flow_flatten or
-            opts.source_name_obfuscation or opts.source_string_split or opts.source_string_xor or opts.source_constant_pool or
+    if (opts.source_global_rename or opts.source_linearize_calls or opts.source_schedule or opts.source_dead_flow or opts.source_vm or opts.control_flow_flatten or
+            opts.source_string_split or opts.source_string_xor or opts.source_constant_pool or
             opts.source_constant_rewrite or opts.source_exception_shell or opts.source_parenthesis_noise or
             opts.source_comment_noise or opts.source_decompiler_carriers or
             opts.source_identity_weave or opts.source_tuple_arg_decoys or
@@ -365,4 +409,4 @@ def merge_options(args):
         opts.loader_mode = 'function'
     if opts.inner_opcode_tunnel and opts.loader_mode not in ('netease-func', 'function'):
         opts.loader_mode = 'marshal'
-    return opts
+    return opts\n

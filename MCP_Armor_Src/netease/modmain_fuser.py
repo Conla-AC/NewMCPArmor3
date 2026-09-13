@@ -1,12 +1,11 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
+
 
 import argparse
 import ast
 import base64
-import imp
 import json
 import marshal
 import os
@@ -19,12 +18,17 @@ import types
 import zlib
 
 from MCP_Armor_Src.netease import policy_checker as netease_policy_checker
-from MCP_Armor_Src.utils.encoding import obfuscate_reserved_generated_identifiers
+from MCP_Armor_Src.utils.encoding import (
+    obfuscate_reserved_generated_identifiers,
+    random_ident,
+)
 from MCP_Armor_Src.utils.chacha import chacha_crypt
+from MCP_Armor_Src.utils.pyc import build_timestamp_pyc
+from MCP_Armor_Src.core import py27_opcode
 
 
-DEFAULT_TAUNT_TEXT = u'\u89e3\u4e0d\u6b7b\u554a\uff0c\u8fd9\u4e48\u7231\u89e3\u600e\u4e48\u4e0d\u53bb\u6b7b\u554a \u50bb\u903c'.encode('utf-8')
-DEFAULT_OUTER_TAUNT_TEXT = u'(\u53c8\u6765\u89e3\u5305\uff1f\u4eb2\u4eba\u600e\u4e48\u529e\uff1f)'.encode('utf-8')
+DEFAULT_TAUNT_TEXT = '\u89e3\u4e0d\u6b7b\u554a\uff0c\u8fd9\u4e48\u7231\u89e3\u600e\u4e48\u4e0d\u53bb\u6b7b\u554a \u50bb\u903c'.encode('utf-8')
+DEFAULT_OUTER_TAUNT_TEXT = '(\u53c8\u6765\u89e3\u5305\uff1f\u4eb2\u4eba\u600e\u4e48\u529e\uff1f)'.encode('utf-8')
 
 EMBEDDED_MCS_OPCODE_MAPS = {1: {0: 74, 1: 15, 2: 28, 3: 56, 4: 40, 5: 41, 6: 42, 7: 43, 8: 11, 9: 24, 10: 9, 12: 25, 13: 66, 15: 82, 16: 78, 17: 85, 18: 27, 20: 50, 21: 51, 22: 52, 23: 53, 26: 60, 27: 71, 28: 64, 29: 12, 30: 73, 31: 22, 36: 19, 37: 86, 38: 81, 39: 3, 41: 75, 42: 26, 43: 54, 44: 25, 45: 79, 46: 63, 47: 77, 48: 65, 49: 5, 50: 68, 52: 72, 53: 2, 55: 89, 56: 20, 57: 87, 59: 83, 60: 80, 62: 84, 63: 23, 64: 115, 65: 88, 67: 61, 69: 64, 70: 57, 71: 30, 72: 31, 73: 32, 74: 33, 75: 62, 78: 76, 79: 60, 80: 4, 84: 10, 86: 1, 88: 55, 92: 71, 93: 100, 95: 122, 100: 93, 101: 143, 102: 125, 107: 133, 114: 90, 116: 91, 119: 131, 122: 102, 123: 134, 130: 107, 131: 146, 134: 137, 135: 106, 138: 92, 139: 109, 140: 95, 144: 96, 148: 108, 150: 116, 152: 126, 153: 120, 158: 135, 160: 114, 173: 136, 179: 60, 183: 97, 192: 140, 193: 141, 194: 142, 197: 111, 198: 132, 199: 110, 202: 99, 204: 145, 207: 98, 210: 94, 211: 115, 212: 121, 226: 124, 230: 112, 231: 105, 232: 101, 233: 115, 234: 60, 235: 130, 240: 104, 243: 121, 247: 119, 250: 113, 252: 103}, 2: {1: 83, 2: 81, 4: 62, 5: 74, 8: 30, 9: 31, 10: 32, 11: 33, 12: 9, 14: 55, 15: 23, 16: 11, 18: 82, 20: 75, 21: 68, 23: 2, 26: 24, 27: 106, 28: 63, 31: 66, 32: 27, 34: 4, 35: 85, 36: 87, 37: 57, 38: 54, 40: 77, 42: 79, 43: 65, 44: 20, 45: 71, 46: 56, 47: 60, 48: 71, 49: 27, 50: 12, 51: 3, 52: 71, 53: 22, 55: 89, 56: 86, 60: 40, 61: 41, 62: 42, 63: 43, 64: 28, 67: 61, 68: 1, 69: 72, 70: 26, 71: 25, 72: 56, 73: 80, 74: 10, 76: 24, 77: 84, 78: 5, 79: 88, 81: 19, 84: 50, 85: 51, 86: 52, 87: 53, 88: 64, 89: 76, 91: 73, 92: 78, 94: 137, 97: 105, 100: 110, 102: 99, 110: 111, 114: 145, 116: 131, 120: 121, 130: 95, 139: 133, 141: 140, 142: 141, 143: 142, 148: 110, 149: 90, 158: 92, 172: 134, 175: 102, 176: 114, 185: 122, 188: 130, 190: 98, 192: 125, 194: 132, 196: 112, 198: 146, 202: 96, 204: 101, 205: 136, 209: 104, 210: 106, 212: 97, 213: 107, 214: 119, 217: 135, 219: 109, 220: 143, 221: 91, 223: 100, 229: 103, 232: 113, 233: 120, 235: 108, 238: 93, 244: 124, 253: 116, 242: 115, 243: 111, 247: 94}, 3: {0: 61, 1: 9, 2: 19, 3: 82, 4: 20, 6: 65, 8: 84, 9: 11, 10: 26, 11: 25, 12: 50, 13: 51, 14: 52, 15: 53, 16: 66, 17: 28, 20: 24, 22: 62, 24: 74, 25: 86, 26: 78, 28: 40, 29: 41, 30: 42, 31: 43, 41: 75, 42: 71, 43: 79, 45: 2, 46: 3, 47: 88, 48: 27, 49: 54, 50: 1, 52: 22, 53: 72, 54: 63, 55: 12, 59: 68, 60: 83, 63: 80, 67: 10, 68: 76, 69: 77, 71: 81, 72: 64, 73: 57, 74: 87, 76: 73, 78: 23, 80: 89, 81: 56, 82: 55, 83: 4, 85: 30, 86: 31, 87: 32, 88: 33, 90: 60, 96: 120, 101: 107, 103: 112, 105: 134, 107: 98, 108: 122, 109: 103, 110: 94, 114: 93, 118: 119, 119: 110, 120: 95, 126: 131, 136: 111, 148: 137, 151: 140, 152: 141, 153: 142, 155: 146, 158: 97, 169: 91, 172: 105, 173: 143, 178: 92, 183: 96, 185: 108, 190: 102, 192: 124, 199: 104, 200: 115, 211: 136, 212: 101, 214: 100, 215: 132, 219: 130, 222: 125, 223: 109, 224: 99, 228: 90, 231: 106, 241: 114, 244: 116, 246: 135, 247: 121, 254: 113}, 4: {0: 9, 1: 5, 2: 76, 3: 15, 4: 40, 5: 41, 6: 42, 7: 43, 8: 25, 9: 72, 10: 21, 11: 19, 13: 75, 14: 27, 15: 68, 16: 56, 17: 87, 18: 86, 19: 28, 20: 54, 21: 20, 23: 71, 24: 57, 26: 81, 27: 30, 28: 31, 29: 32, 30: 33, 31: 63, 35: 60, 39: 66, 40: 88, 41: 77, 42: 21, 43: 4, 44: 10, 46: 80, 47: 73, 52: 3, 53: 82, 54: 24, 59: 62, 60: 78, 62: 50, 63: 51, 64: 52, 65: 53, 67: 89, 68: 79, 70: 11, 71: 24, 72: 65, 73: 23, 75: 22, 77: 55, 78: 66, 79: 85, 80: 2, 81: 83, 82: 84, 83: 1, 86: 12, 87: 26, 88: 74, 89: 61, 92: 64, 96: 137, 107: 93, 110: 99, 111: 104, 116: 122, 121: 110, 123: 113, 132: 101, 133: 136, 134: 97, 135: 91, 136: 116, 137: 106, 140: 124, 144: 131, 159: 125, 161: 105, 162: 126, 163: 109, 166: 134, 167: 119, 175: 103, 182: 130, 189: 146, 194: 143, 195: 111, 201: 90, 208: 120, 209: 121, 212: 95, 213: 112, 214: 135, 216: 94, 218: 114, 222: 100, 223: 147, 225: 96, 228: 107, 229: 102, 233: 140, 234: 141, 235: 142, 240: 98, 243: 115, 247: 132, 250: 108, 252: 133, 254: 92}}
 
@@ -378,7 +382,7 @@ def require_py27():
 
 
 def random_identifier(prefix):
-    return '_0x' + ''.join(random.choice('0123456789abcdef') for _ in range(random.randint(10, 18)))
+    return random_ident(prefix)
 
 
 def random_plain_name(length=None):
@@ -514,7 +518,7 @@ def build_docstring(line_count, indent, min_bytes=24, max_bytes=54):
 def utf8_byte_list(text):
     if text is None:
         text = ''
-    if isinstance(text, unicode):
+    if isinstance(text, str):
         text = text.encode('utf-8')
     return [ord(ch) for ch in text]
 
@@ -622,8 +626,8 @@ def load_std2mcs_map(version):
         source = source.split('MAP_STORE', 1)[0]
         source = '\n'.join(line for line in source.splitlines() if not line.startswith('from typing import'))
         namespace = {}
-        exec source in namespace, namespace
-        for key, value in namespace.items():
+        exec(source, namespace, namespace)
+        for key, value in list(namespace.items()):
             if key.startswith('OP_MAP_V') and isinstance(value, dict):
                 try:
                     maps[int(key[len('OP_MAP_V'):])] = value
@@ -639,7 +643,7 @@ def load_std2mcs_map(version):
         mcs2std = maps.get(version) or maps.get(1)
     if not mcs2std:
         raise SystemExit('error: cannot load MCS opcode map version %s' % version)
-    std2mcs = dict((std_op, mcs_op) for mcs_op, std_op in mcs2std.items())
+    std2mcs = dict((std_op, mcs_op) for mcs_op, std_op in list(mcs2std.items()))
     return std2mcs
 
 
@@ -647,7 +651,7 @@ def parse_opcode_overrides(items):
     overrides = {}
     if not items:
         return overrides
-    import dis
+    dis = py27_opcode
     for item in items:
         if '=' not in item:
             raise SystemExit('error: --mcs-op-override expects NAME=VALUE')
@@ -666,7 +670,7 @@ def parse_opcode_overrides(items):
 
 
 def parse_opcode_token(token):
-    import dis
+    dis = py27_opcode
     token = str(token).strip()
     if token in dis.opmap:
         return dis.opmap[token]
@@ -684,11 +688,11 @@ def normalize_inner_opcode_table(data):
     mapping = {}
     if isinstance(data, dict):
         if 'std_to_custom' in data:
-            items = data['std_to_custom'].items()
+            items = list(data['std_to_custom'].items())
         elif 'custom_to_std' in data:
-            items = [(std, custom) for custom, std in data['custom_to_std'].items()]
+            items = [(std, custom) for custom, std in list(data['custom_to_std'].items())]
         else:
-            items = data.items()
+            items = list(data.items())
     else:
         items = data
     for item in items:
@@ -703,7 +707,7 @@ def normalize_inner_opcode_table(data):
             raise SystemExit('error: duplicate custom opcode mapping for std opcode %s' % std)
         mapping[std] = custom
     used_custom = {}
-    for std, custom in mapping.items():
+    for std, custom in list(mapping.items()):
         if custom in used_custom and used_custom[custom] != std:
             raise SystemExit('error: custom opcode %s is used by both %s and %s' % (custom, used_custom[custom], std))
         used_custom[custom] = std
@@ -824,7 +828,7 @@ def build_inner_custom_opcode_maps(code, user_table=None):
     user_table = dict(user_table or {})
     no_arg_pool = list(range(1, HAVE_ARGUMENT))
     arg_pool = list(range(HAVE_ARGUMENT, 256))
-    for custom in user_table.values():
+    for custom in list(user_table.values()):
         if custom < HAVE_ARGUMENT:
             if custom in no_arg_pool:
                 no_arg_pool.remove(custom)
@@ -851,7 +855,7 @@ def build_inner_custom_opcode_maps(code, user_table=None):
             raise SystemExit('error: custom opcode %s is used by both %s and %s' % (custom, custom_to_std[custom], op))
         std_to_custom[op] = custom
         custom_to_std[custom] = op
-    custom_has_arg = tuple(sorted(custom for op, custom in std_to_custom.items() if op >= HAVE_ARGUMENT))
+    custom_has_arg = tuple(sorted(custom for op, custom in list(std_to_custom.items()) if op >= HAVE_ARGUMENT))
     return std_to_custom, custom_to_std, custom_has_arg
 
 
@@ -859,7 +863,7 @@ def remap_code_object_per_code(code, runtime_op_map=None, user_table=None):
     std_to_custom, custom_to_std, custom_has_arg = build_inner_custom_opcode_maps(code, user_table)
     runtime_map = custom_to_std
     if runtime_op_map:
-        runtime_map = dict((custom, runtime_op_map.get(std, std)) for custom, std in custom_to_std.items())
+        runtime_map = dict((custom, runtime_op_map.get(std, std)) for custom, std in list(custom_to_std.items()))
     consts = []
     child_maps = []
     for const in code.co_consts:
@@ -924,7 +928,7 @@ def shuffle_code_metadata(code, shuffle_consts=False, shuffle_names=False, fake_
     name_map = {}
     varname_map = {}
     if shuffle_consts and len(consts) > 1:
-        keep_first = bool(consts and isinstance(consts[0], basestring))
+        keep_first = bool(consts and isinstance(consts[0], str))
         const_map, const_order = shuffled_index_map(len(consts), keep_first)
         consts = [consts[index] for index in const_order]
     if shuffle_names and names:
@@ -1005,7 +1009,7 @@ def make_code_like(code, code_bytes=None, consts=None, names=None, varnames=None
 
 
 def random_code_name():
-    return '_0x' + ''.join(random.choice('0123456789abcdef') for _ in range(random.randint(7, 14)))
+    return random_ident('code')
 
 
 def random_safe_filename():
@@ -1904,7 +1908,7 @@ class SafeEquivalentTransformer(ast.NodeTransformer):
         return ast.copy_location(new_node, node)
 
     def visit_Num(self, node):
-        if not self.fold_numbers or not isinstance(node.n, (int, long)) or node.n in (-1, 0, 1):
+        if not self.fold_numbers or not isinstance(node.n, int) or node.n in (-1, 0, 1):
             return node
         mask = random.randint(7, 255)
         new_node = ast.BinOp(left=ast.Num(n=node.n ^ mask), op=ast.BitXor(), right=ast.Num(n=mask))
@@ -2003,7 +2007,7 @@ class ConstPoolTransformer(ast.NodeTransformer):
         return self._pool_ref(node.s, node)
 
     def visit_Num(self, node):
-        if not self.enabled_numbers or not isinstance(node.n, (int, long)) or node.n in (-1, 0, 1):
+        if not self.enabled_numbers or not isinstance(node.n, int) or node.n in (-1, 0, 1):
             return node
         return self._pool_ref(node.n, node)
 
@@ -2073,7 +2077,7 @@ def build_fake_class_defs(count, taunt_text=None):
 
 
 def _encrypt_one_string(value, chain, key):
-    is_unicode = isinstance(value, unicode)
+    is_unicode = isinstance(value, str)
     data = value.encode('utf-8') if is_unicode else value
     if 'zlib' in chain:
         data = zlib.compress(data, 9)
@@ -2148,7 +2152,7 @@ def compile_obfuscated_source(source, filename, string_chain=None, fold_strings=
                 insert_at = 1
             while insert_at < len(body) and isinstance(body[insert_at], ast.ImportFrom) and body[insert_at].module == '__future__':
                 insert_at += 1
-            tree.body = body[:insert_at] + [ast.Assign(targets=[ast.Name(id=pool_name, ctx=ast.Store())], value=ast.Tuple(elts=[ast.Str(s=v) if isinstance(v, basestring) else ast.Num(n=v) for v in pool_values], ctx=ast.Load()))] + body[insert_at:]
+            tree.body = body[:insert_at] + [ast.Assign(targets=[ast.Name(id=pool_name, ctx=ast.Store())], value=ast.Tuple(elts=[ast.Str(s=v) if isinstance(v, str) else ast.Num(n=v) for v in pool_values], ctx=ast.Load()))] + body[insert_at:]
         ast.fix_missing_locations(tree)
     if fake_function_count > 0:
         tree.body.extend(build_fake_function_defs(fake_function_count, taunt_text))
@@ -2289,7 +2293,7 @@ def wrap_code_in_opcode_tunnel(code, label, poison_count, taunt_text, mcs_opmap_
     if mcs_opmap_version:
         runtime_op_map = load_std2mcs_map(mcs_opmap_version)
         runtime_op_map.update(op_overrides or {})
-        runtime_map = dict((custom, runtime_op_map.get(std, std)) for custom, std in custom_to_std.items())
+        runtime_map = dict((custom, runtime_op_map.get(std, std)) for custom, std in list(custom_to_std.items()))
     if per_code_table:
         stored, root_map = remap_code_object_per_code(code, runtime_op_map, inner_opcode_table)
         items = root_map[0]
@@ -2542,7 +2546,7 @@ def read_file(path):
 def write_pyc(path, code, timestamp=None):
     if timestamp is None:
         timestamp = time.time()
-    write_file(path, imp.get_magic() + struct.pack('<L', int(timestamp)) + marshal.dumps(code))
+    write_file(path, build_timestamp_pyc(code, timestamp))
 
 
 def read_json_config(path):
@@ -2563,7 +2567,7 @@ def apply_config_defaults(parser, config):
         return
     action_dests = set(action.dest for action in parser._actions)
     defaults = {}
-    for key, value in config.items():
+    for key, value in list(config.items()):
         dest = normalize_config_key(key)
         if dest in action_dests:
             defaults[dest] = value
@@ -2738,7 +2742,7 @@ def normalize_aliases(aliases, selected=None):
         selected = set(selected)
     reserved = set(['mod', 'server', 'client'])
     result = {}
-    for key, value in aliases.items():
+    for key, value in list(aliases.items()):
         if selected is not None and key not in selected:
             continue
         result[key] = tuple(sorted(item for item in value if item not in reserved))
@@ -2761,7 +2765,7 @@ def compile_module_blobs(sources, mcs_opmap_version, op_overrides, module_opmap_
         return op_map_cache[version]
 
     blobs = {}
-    for name, source in sources.items():
+    for name, source in list(sources.items()):
         op_map = get_op_map(name)
         code = compile_obfuscated_source(source, '<' + name + '>', string_chain or (), fold_strings, fold_numbers, rewrite_boolops, flatten_control_flow, return_gate, exception_gate, call_perturb, exception_gate_rate, call_perturb_rate, statement_reorder, statement_reorder_rate, statement_reorder_window, inner_dataflow_noise, inner_dataflow_rate, inner_dataflow_min, inner_dataflow_max, const_pool_strings, const_pool_numbers, call_dispatcher, call_dispatcher_rate, fake_function_count, flatten_control_flow_v2, taunt_text, reference_obf, reference_obf_rate, fake_class_count)
         if shuffle_consts or shuffle_names or shuffle_varnames:
@@ -2792,7 +2796,7 @@ def class_exports_for_modules(module_names, class_paths):
         module_name, class_name = split_class_path(class_path)
         if module_name in module_names:
             result.setdefault(module_name, set()).add(class_name)
-    return dict((key, tuple(sorted(value))) for key, value in result.items())
+    return dict((key, tuple(sorted(value))) for key, value in list(result.items()))
 
 
 def external_short_aliases(modules, selected, namespace):
@@ -3947,4 +3951,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
+    main()\n

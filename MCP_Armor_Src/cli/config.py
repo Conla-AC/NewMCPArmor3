@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """YAML parsing, option aliases and NetEase profile application."""
-from __future__ import absolute_import, print_function
+
 
 from MCP_Armor_Src.core.constants import (
     NETEASE_PROFILES,
@@ -43,7 +43,7 @@ def read_config_file(path):
     stack = [(-1, data)]
     pending_list = {}
     source = read_file(path)
-    if not isinstance(source, type(u'')):
+    if not isinstance(source, type('')):
         source = source.decode('utf-8-sig')
     for raw in source.splitlines():
         line = raw.split('#', 1)[0].rstrip()
@@ -80,7 +80,7 @@ def read_config_file(path):
 
 def flatten_config(config, prefix=''):
     flat = {}
-    for key, value in config.items():
+    for key, value in list(config.items()):
         name = (prefix + '_' + key) if prefix else key
         if isinstance(value, dict):
             flat.update(flatten_config(value, name))
@@ -93,9 +93,11 @@ def flatten_config(config, prefix=''):
 def collect_provided_options(argv):
     provided = set()
     mapping = {
+        '--output-date': 'output_date',
         '--folder': 'folder', '--obfuscate-init': 'obfuscate_init', '--emit-pyc': 'emit_pyc', '-o': 'output', '--output': 'output', '--preset': 'preset', '--resource-profile': 'resource_profile',
         '--debug': 'debug', '--header-mode': 'header_mode',
         '--banner-mode': 'header_mode',
+        '--static-check': 'static_check', '--no-static-check': 'static_check',
         '--netease-profile': 'netease_profile',
         '--key-len': 'key_len', '--payload-cipher': 'payload_cipher', '--anti-debug': 'anti_debug', '--experimental-anti-debug': 'experimental_anti_debug', '--const-noise': 'const_noise', '--tail-noise': 'tail_noise',
         '--loader-junk': 'loader_junk', '--trampoline-layers': 'trampoline_layers',
@@ -173,15 +175,26 @@ def collect_provided_options(argv):
         '--bytecode-jump-inversion-limit': 'bytecode_jump_inversion_limit',
         '--bytecode-jump-trampolines': 'bytecode_jump_trampolines',
         '--bytecode-jump-trampoline-limit': 'bytecode_jump_trampoline_limit',
-        '--bytecode-cfg-flow': 'bytecode_cfg_flow',
-        '--bytecode-cfg-flow-ratio': 'bytecode_cfg_flow_ratio',
-        '--bytecode-cfg-flow-max-edges': 'bytecode_cfg_flow_max_edges',
-        '--bytecode-cfg-block-seeds': 'bytecode_cfg_block_seeds',
-        '--bytecode-cfg-block-seed-ratio': 'bytecode_cfg_block_seed_ratio',
-        '--bytecode-cfg-block-seed-max-blocks': 'bytecode_cfg_block_seed_max_blocks',
-        '--bytecode-cfg-block-shuffle': 'bytecode_cfg_block_shuffle',
-        '--bytecode-cfg-block-shuffle-ratio': 'bytecode_cfg_block_shuffle_ratio',
-        '--bytecode-cfg-block-shuffle-max-blocks': 'bytecode_cfg_block_shuffle_max_blocks',
+        '--bytecode-cfg-flow': 'bytecode_flow',
+        '--bytecode-cfg-flow-ratio': 'bytecode_flow_ratio',
+        '--bytecode-cfg-flow-max-edges': 'bytecode_flow_max_edges',
+        '--bytecode-cfg-loop-dispatch': 'bytecode_flow_loop_dispatch',
+        '--bytecode-cfg-block-seeds': 'bytecode_flow_block_seeds',
+        '--bytecode-cfg-block-seed-ratio': 'bytecode_flow_block_seed_ratio',
+        '--bytecode-cfg-block-seed-max-blocks': 'bytecode_flow_block_seed_max_blocks',
+        '--bytecode-cfg-block-shuffle': 'bytecode_flow_block_shuffle',
+        '--bytecode-cfg-block-shuffle-ratio': 'bytecode_flow_block_shuffle_ratio',
+        '--bytecode-cfg-block-shuffle-max-blocks': 'bytecode_flow_block_shuffle_max_blocks',
+        '--bytecode-flow': 'bytecode_flow',
+        '--bytecode-flow-ratio': 'bytecode_flow_ratio',
+        '--bytecode-flow-max-edges': 'bytecode_flow_max_edges',
+        '--bytecode-flow-loop-dispatch': 'bytecode_flow_loop_dispatch',
+        '--bytecode-flow-block-seeds': 'bytecode_flow_block_seeds',
+        '--bytecode-flow-block-seed-ratio': 'bytecode_flow_block_seed_ratio',
+        '--bytecode-flow-block-seed-max-blocks': 'bytecode_flow_block_seed_max_blocks',
+        '--bytecode-flow-block-shuffle': 'bytecode_flow_block_shuffle',
+        '--bytecode-flow-block-shuffle-ratio': 'bytecode_flow_block_shuffle_ratio',
+        '--bytecode-flow-block-shuffle-max-blocks': 'bytecode_flow_block_shuffle_max_blocks',
         '--bytecode-strategy-variation': 'bytecode_strategy_variation',
         '--bytecode-strategy-seed': 'bytecode_strategy_seed',
         '--bytecode-delayed-const-access': 'bytecode_delayed_const_access',
@@ -197,10 +210,16 @@ def collect_provided_options(argv):
         '--bytecode-taken-jump-poison': 'bytecode_taken_jump_poison',
         '--bytecode-opaque-predicates': 'bytecode_opaque_predicates', '--bytecode-opaque-interval': 'bytecode_opaque_interval', '--bytecode-opaque-width': 'bytecode_opaque_width', '--bytecode-opaque-limit': 'bytecode_opaque_limit',
         '--index-pool-shuffle': 'index_pool_shuffle', '--index-pool-mirrors': 'index_pool_mirrors',
-        '--source-linearize-calls': 'source_linearize_calls', '--source-local-rename': 'source_local_rename',
-        '--source-name-obfuscation': 'source_name_obfuscation', '--source-name-obfuscation-max': 'source_name_obfuscation_max',
-        '--source-function-name-obfuscation': 'source_name_obfuscation',
-        '--source-class-name-obfuscation': 'source_name_obfuscation',
+        '--source-linearize-calls': 'source_linearize_calls',
+        '--source-global-rename': 'source_global_rename',
+        '--no-source-global-rename': 'source_global_rename',
+        '--source-module-rename': 'source_module_rename',
+        '--no-source-module-rename': 'source_module_rename',
+        '--source-module-rename-exclude': 'source_module_rename_exclude',
+        '--write-rename-mapping': 'write_rename_mapping',
+        '--no-write-rename-mapping': 'write_rename_mapping',
+        '--source-function-split': 'source_function_split',
+        '--no-source-function-split': 'source_function_split',
         '--source-string-split': 'source_string_split', '--source-string-split-parts': 'source_string_split_parts',
         '--source-string-xor': 'source_string_xor', '--source-string-xor-mode': 'source_string_xor_mode',
         '--source-string-xor-text': 'source_string_xor_text', '--source-string-xor-number': 'source_string_xor_number',
@@ -212,7 +231,7 @@ def collect_provided_options(argv):
         '--source-exception-shell': 'source_exception_shell',
         '--source-parenthesis-noise': 'source_parenthesis_noise',
         '--source-comment-noise': 'source_comment_noise', '--source-comment-noise-count': 'source_comment_noise_count',
-        '--source-vm': 'source_vm', '--source-vm-full': 'source_vm_full', '--source-vm-ratio': 'source_vm_ratio',
+        '--source-vm': 'source_vm', '--source-vm-ir': 'source_vm_ir', '--source-vm-extension': 'source_vm_extension', '--source-vm-full': 'source_vm_full', '--source-vm-ratio': 'source_vm_ratio',
         '--source-vm-min-ops': 'source_vm_min_ops', '--source-vm-max-ops': 'source_vm_max_ops',
         '--source-vm-max-functions': 'source_vm_max_functions',
         '--source-vm-include': 'source_vm_include', '--source-vm-exclude': 'source_vm_exclude',
@@ -239,18 +258,18 @@ def collect_provided_options(argv):
         '--source-decoy-docstring-max': 'source_decoy_docstring_max',
         '--source-exception-lattice': 'source_exception_lattice',
         '--source-class-body-trap': 'source_class_body_trap',
-        '--source-local-rename-max': 'source_local_rename_max',
         '--source-dead-flow': 'source_dead_flow', '--source-dead-flow-blocks': 'source_dead_flow_blocks',
         '--source-schedule': 'source_schedule', '--source-schedule-max-exprs': 'source_schedule_max_exprs', '--source-schedule-window': 'source_schedule_window',
         '--no-bytecode-obf': 'no_bytecode_obf', '--source-only': 'source_only', '--ast-exclude': 'ast_exclude',
         '--control-flow-flatten': 'control_flow_flatten', '--control-flow-max-blocks': 'control_flow_max_blocks',
         '--opcode-replacement': 'opcode_replacement', '--runtime-opcode-layer': 'runtime_opcode_layer', '--per-code-runtime-opcode': 'per_code_runtime_opcode',
-        '--runtime-opcode-decoys': 'runtime_opcode_decoys', '--opcode-exclude': 'opcode_exclude', '--loader-mode': 'loader_mode',
+        '--runtime-opcode-decoys': 'runtime_opcode_decoys', '--opcode-exclude': 'opcode_exclude', '--loader-mode': 'loader_mode', '--loader-dialect': 'loader_dialect',
         '--code-tuple-payload': 'code_tuple_payload', '--legacy-marshal-payload': 'code_tuple_payload',
         '--no-code-tuple-payload': 'code_tuple_payload',
         '--filename-mode': 'filename_mode', '--include': 'include', '--exclude': 'exclude',
         '--obfuscate-modmain': 'obfuscate_modmain', '--target-side': 'target_side',
         '--clean-output': 'clean_output', '--copy-pyc': 'copy_pyc', '--deploy-target': 'deploy_target', '--fix-netease-register': 'fix_netease_register',
+        '--python27': 'python27',
         '--package-name': 'package_name', '--namespace': 'namespace', '--inner-opcode-tunnel': 'inner_opcode_tunnel',
         '--opcode-runtime': 'opcode_runtime', '--mcs-opmap-version': 'mcs_opmap_version',
     }
@@ -264,9 +283,13 @@ def apply_config(args, config):
     flat = flatten_config(config or {})
     aliases = {
         'input': 'input', 'output': 'output', 'folder': 'folder', 'obfuscate_init': 'obfuscate_init', 'project_obfuscate_init': 'obfuscate_init', 'emit_pyc': 'emit_pyc', 'preset': 'preset', 'resource_profile': 'resource_profile',
+        'python27': 'python27', 'runtime_python27': 'python27',
+        'static_check': 'static_check',
+        'static_check_enabled': 'static_check',
         'netease_profile': 'netease_profile', 'profile': 'netease_profile',
         'debug': 'debug', 'debug_enabled': 'debug', 'basic_debug': 'debug',
         'header_mode': 'header_mode', 'banner_mode': 'header_mode',
+        'output_date': 'output_date', 'watermark_date': 'output_date',
         'key_len': 'key_len', 'payload_cipher': 'payload_cipher', 'anti_debug': 'anti_debug',
         'experimental_anti_debug': 'experimental_anti_debug',
         'experimental_loader_anti_debug': 'experimental_anti_debug',
@@ -360,16 +383,27 @@ def apply_config(args, config):
         'bytecode_jump_inversion_limit': 'bytecode_jump_inversion_limit',
         'bytecode_jump_trampolines': 'bytecode_jump_trampolines',
         'bytecode_jump_trampoline_limit': 'bytecode_jump_trampoline_limit',
-        'bytecode_cfg_flow': 'bytecode_cfg_flow', 'cfg_flow': 'bytecode_cfg_flow',
-        'bytecode_control_flow_graph': 'bytecode_cfg_flow',
-        'bytecode_cfg_flow_ratio': 'bytecode_cfg_flow_ratio', 'cfg_flow_ratio': 'bytecode_cfg_flow_ratio',
-        'bytecode_cfg_flow_max_edges': 'bytecode_cfg_flow_max_edges', 'cfg_flow_max_edges': 'bytecode_cfg_flow_max_edges',
-        'bytecode_cfg_block_seeds': 'bytecode_cfg_block_seeds', 'cfg_block_seeds': 'bytecode_cfg_block_seeds',
-        'bytecode_cfg_block_seed_ratio': 'bytecode_cfg_block_seed_ratio', 'cfg_block_seed_ratio': 'bytecode_cfg_block_seed_ratio',
-        'bytecode_cfg_block_seed_max_blocks': 'bytecode_cfg_block_seed_max_blocks', 'cfg_block_seed_max_blocks': 'bytecode_cfg_block_seed_max_blocks',
-        'bytecode_cfg_block_shuffle': 'bytecode_cfg_block_shuffle', 'cfg_block_shuffle': 'bytecode_cfg_block_shuffle',
-        'bytecode_cfg_block_shuffle_ratio': 'bytecode_cfg_block_shuffle_ratio', 'cfg_block_shuffle_ratio': 'bytecode_cfg_block_shuffle_ratio',
-        'bytecode_cfg_block_shuffle_max_blocks': 'bytecode_cfg_block_shuffle_max_blocks', 'cfg_block_shuffle_max_blocks': 'bytecode_cfg_block_shuffle_max_blocks',
+        'bytecode_cfg_flow': 'bytecode_flow', 'cfg_flow': 'bytecode_flow',
+        'bytecode_flow': 'bytecode_flow', 'flow': 'bytecode_flow',
+        'bytecode_control_flow_graph': 'bytecode_flow',
+        'bytecode_cfg_flow_ratio': 'bytecode_flow_ratio', 'cfg_flow_ratio': 'bytecode_flow_ratio',
+        'bytecode_flow_ratio': 'bytecode_flow_ratio', 'flow_ratio': 'bytecode_flow_ratio',
+        'bytecode_cfg_flow_max_edges': 'bytecode_flow_max_edges', 'cfg_flow_max_edges': 'bytecode_flow_max_edges',
+        'bytecode_flow_max_edges': 'bytecode_flow_max_edges', 'flow_max_edges': 'bytecode_flow_max_edges',
+        'bytecode_cfg_loop_dispatch': 'bytecode_flow_loop_dispatch', 'cfg_loop_dispatch': 'bytecode_flow_loop_dispatch',
+        'bytecode_flow_loop_dispatch': 'bytecode_flow_loop_dispatch', 'flow_loop_dispatch': 'bytecode_flow_loop_dispatch',
+        'bytecode_cfg_block_seeds': 'bytecode_flow_block_seeds', 'cfg_block_seeds': 'bytecode_flow_block_seeds',
+        'bytecode_flow_block_seeds': 'bytecode_flow_block_seeds', 'flow_block_seeds': 'bytecode_flow_block_seeds',
+        'bytecode_cfg_block_seed_ratio': 'bytecode_flow_block_seed_ratio', 'cfg_block_seed_ratio': 'bytecode_flow_block_seed_ratio',
+        'bytecode_flow_block_seed_ratio': 'bytecode_flow_block_seed_ratio', 'flow_block_seed_ratio': 'bytecode_flow_block_seed_ratio',
+        'bytecode_cfg_block_seed_max_blocks': 'bytecode_flow_block_seed_max_blocks', 'cfg_block_seed_max_blocks': 'bytecode_flow_block_seed_max_blocks',
+        'bytecode_flow_block_seed_max_blocks': 'bytecode_flow_block_seed_max_blocks', 'flow_block_seed_max_blocks': 'bytecode_flow_block_seed_max_blocks',
+        'bytecode_cfg_block_shuffle': 'bytecode_flow_block_shuffle', 'cfg_block_shuffle': 'bytecode_flow_block_shuffle',
+        'bytecode_flow_block_shuffle': 'bytecode_flow_block_shuffle', 'flow_block_shuffle': 'bytecode_flow_block_shuffle',
+        'bytecode_cfg_block_shuffle_ratio': 'bytecode_flow_block_shuffle_ratio', 'cfg_block_shuffle_ratio': 'bytecode_flow_block_shuffle_ratio',
+        'bytecode_flow_block_shuffle_ratio': 'bytecode_flow_block_shuffle_ratio', 'flow_block_shuffle_ratio': 'bytecode_flow_block_shuffle_ratio',
+        'bytecode_cfg_block_shuffle_max_blocks': 'bytecode_flow_block_shuffle_max_blocks', 'cfg_block_shuffle_max_blocks': 'bytecode_flow_block_shuffle_max_blocks',
+        'bytecode_flow_block_shuffle_max_blocks': 'bytecode_flow_block_shuffle_max_blocks', 'flow_block_shuffle_max_blocks': 'bytecode_flow_block_shuffle_max_blocks',
         'bytecode_strategy_variation': 'bytecode_strategy_variation', 'bytecode_strategy_seed': 'bytecode_strategy_seed',
         'bytecode_delayed_const_access': 'bytecode_delayed_const_access',
         'bytecode_delayed_constants': 'bytecode_delayed_const_access',
@@ -413,24 +447,26 @@ def apply_config(args, config):
         'bytecode_bytecode_jump_inversion_limit': 'bytecode_jump_inversion_limit',
         'bytecode_bytecode_jump_trampolines': 'bytecode_jump_trampolines',
         'bytecode_bytecode_jump_trampoline_limit': 'bytecode_jump_trampoline_limit',
-        'bytecode_bytecode_cfg_flow': 'bytecode_cfg_flow',
-        'bytecode_cfg_flow': 'bytecode_cfg_flow',
-        'bytecode_bytecode_cfg_flow_ratio': 'bytecode_cfg_flow_ratio',
-        'bytecode_cfg_flow_ratio': 'bytecode_cfg_flow_ratio',
-        'bytecode_bytecode_cfg_flow_max_edges': 'bytecode_cfg_flow_max_edges',
-        'bytecode_cfg_flow_max_edges': 'bytecode_cfg_flow_max_edges',
-        'bytecode_bytecode_cfg_block_seeds': 'bytecode_cfg_block_seeds',
-        'bytecode_cfg_block_seeds': 'bytecode_cfg_block_seeds',
-        'bytecode_bytecode_cfg_block_seed_ratio': 'bytecode_cfg_block_seed_ratio',
-        'bytecode_cfg_block_seed_ratio': 'bytecode_cfg_block_seed_ratio',
-        'bytecode_bytecode_cfg_block_seed_max_blocks': 'bytecode_cfg_block_seed_max_blocks',
-        'bytecode_cfg_block_seed_max_blocks': 'bytecode_cfg_block_seed_max_blocks',
-        'bytecode_bytecode_cfg_block_shuffle': 'bytecode_cfg_block_shuffle',
-        'bytecode_cfg_block_shuffle': 'bytecode_cfg_block_shuffle',
-        'bytecode_bytecode_cfg_block_shuffle_ratio': 'bytecode_cfg_block_shuffle_ratio',
-        'bytecode_cfg_block_shuffle_ratio': 'bytecode_cfg_block_shuffle_ratio',
-        'bytecode_bytecode_cfg_block_shuffle_max_blocks': 'bytecode_cfg_block_shuffle_max_blocks',
-        'bytecode_cfg_block_shuffle_max_blocks': 'bytecode_cfg_block_shuffle_max_blocks',
+        'bytecode_bytecode_cfg_flow': 'bytecode_flow',
+        'bytecode_cfg_flow': 'bytecode_flow',
+        'bytecode_bytecode_cfg_flow_ratio': 'bytecode_flow_ratio',
+        'bytecode_cfg_flow_ratio': 'bytecode_flow_ratio',
+        'bytecode_bytecode_cfg_flow_max_edges': 'bytecode_flow_max_edges',
+        'bytecode_cfg_flow_max_edges': 'bytecode_flow_max_edges',
+        'bytecode_bytecode_cfg_loop_dispatch': 'bytecode_flow_loop_dispatch',
+        'bytecode_cfg_loop_dispatch': 'bytecode_flow_loop_dispatch',
+        'bytecode_bytecode_cfg_block_seeds': 'bytecode_flow_block_seeds',
+        'bytecode_cfg_block_seeds': 'bytecode_flow_block_seeds',
+        'bytecode_bytecode_cfg_block_seed_ratio': 'bytecode_flow_block_seed_ratio',
+        'bytecode_cfg_block_seed_ratio': 'bytecode_flow_block_seed_ratio',
+        'bytecode_bytecode_cfg_block_seed_max_blocks': 'bytecode_flow_block_seed_max_blocks',
+        'bytecode_cfg_block_seed_max_blocks': 'bytecode_flow_block_seed_max_blocks',
+        'bytecode_bytecode_cfg_block_shuffle': 'bytecode_flow_block_shuffle',
+        'bytecode_cfg_block_shuffle': 'bytecode_flow_block_shuffle',
+        'bytecode_bytecode_cfg_block_shuffle_ratio': 'bytecode_flow_block_shuffle_ratio',
+        'bytecode_cfg_block_shuffle_ratio': 'bytecode_flow_block_shuffle_ratio',
+        'bytecode_bytecode_cfg_block_shuffle_max_blocks': 'bytecode_flow_block_shuffle_max_blocks',
+        'bytecode_cfg_block_shuffle_max_blocks': 'bytecode_flow_block_shuffle_max_blocks',
         'bytecode_bytecode_strategy_variation': 'bytecode_strategy_variation',
         'bytecode_bytecode_strategy_seed': 'bytecode_strategy_seed',
         'bytecode_bytecode_delayed_const_access': 'bytecode_delayed_const_access',
@@ -449,10 +485,13 @@ def apply_config(args, config):
         'opaque_predicates': 'bytecode_opaque_predicates', 'opaque_interval': 'bytecode_opaque_interval', 'opaque_width': 'bytecode_opaque_width', 'opaque_limit': 'bytecode_opaque_limit',
         'index_pool_shuffle': 'index_pool_shuffle', 'index_pool_mirrors': 'index_pool_mirrors',
         'bytecode_index_pool_shuffle': 'index_pool_shuffle', 'bytecode_index_pool_mirrors': 'index_pool_mirrors',
-        'source_linearize_calls': 'source_linearize_calls', 'source_local_rename': 'source_local_rename',
-        'source_name_obfuscation': 'source_name_obfuscation',
-        'source_function_name_obfuscation': 'source_name_obfuscation',
-        'source_class_name_obfuscation': 'source_name_obfuscation',
+        'source_linearize_calls': 'source_linearize_calls',
+        'source_global_rename': 'source_global_rename',
+        'global_rename': 'source_global_rename',
+        'source_module_rename': 'source_module_rename',
+        'module_rename': 'source_module_rename',
+        'source_module_rename_exclude': 'source_module_rename_exclude',
+        'module_rename_exclude': 'source_module_rename_exclude',
         'source_string_split': 'source_string_split',
         'source_string_split_parts': 'source_string_split_parts',
         'source_string_xor': 'source_string_xor',
@@ -474,6 +513,8 @@ def apply_config(args, config):
         'source_comment_noise': 'source_comment_noise',
         'source_comment_noise_count': 'source_comment_noise_count',
         'source_vm': 'source_vm', 'source_vm_enabled': 'source_vm',
+        'source_vm_ir': 'source_vm_ir', 'vm_ir': 'source_vm_ir',
+        'source_vm_extension': 'source_vm_extension', 'vm_extension': 'source_vm_extension',
         'source_vm_full': 'source_vm_full', 'vm_full': 'source_vm_full',
         'source_vm_ratio': 'source_vm_ratio', 'source_vm_min_ops': 'source_vm_min_ops',
         'source_vm_max_ops': 'source_vm_max_ops', 'source_vm_max_functions': 'source_vm_max_functions', 'source_vm_include': 'source_vm_include',
@@ -502,7 +543,6 @@ def apply_config(args, config):
         'source_decoy_docstring_max': 'source_decoy_docstring_max', 'decoy_docstring_max': 'source_decoy_docstring_max',
         'source_exception_lattice': 'source_exception_lattice',
         'source_class_body_trap': 'source_class_body_trap',
-        'source_local_rename_max': 'source_local_rename_max',
         'source_dead_flow': 'source_dead_flow', 'source_dead_flow_blocks': 'source_dead_flow_blocks',
         'dead_flow': 'source_dead_flow', 'dead_flow_blocks': 'source_dead_flow_blocks',
         'source_schedule': 'source_schedule', 'source_schedule_max_exprs': 'source_schedule_max_exprs', 'source_schedule_window': 'source_schedule_window',
@@ -511,7 +551,7 @@ def apply_config(args, config):
         'control_flow_flatten': 'control_flow_flatten', 'control_flow_max_blocks': 'control_flow_max_blocks',
         'opcode_replacement': 'opcode_replacement', 'opcode_replace': 'opcode_replacement',
         'runtime_opcode_layer': 'runtime_opcode_layer', 'per_code_runtime_opcode': 'per_code_runtime_opcode',
-        'runtime_opcode_decoys': 'runtime_opcode_decoys', 'opcode_exclude': 'opcode_exclude', 'loader_mode': 'loader_mode',
+        'runtime_opcode_decoys': 'runtime_opcode_decoys', 'opcode_exclude': 'opcode_exclude', 'loader_mode': 'loader_mode', 'loader_vm': 'loader_vm', 'loader_dialect': 'loader_dialect',
         'code_tuple_payload': 'code_tuple_payload', 'payload_code_tuple': 'code_tuple_payload',
         'loader_code_tuple_payload': 'code_tuple_payload',
         'filename_mode': 'filename_mode', 'include': 'include', 'exclude': 'exclude',
@@ -525,6 +565,7 @@ def apply_config(args, config):
         'netease_fix_register': 'fix_netease_register', 'netease_package_name': 'package_name', 'netease_namespace': 'namespace',
         'basic_preset': 'preset', 'basic_key_len': 'key_len', 'basic_loader_mode': 'loader_mode', 'basic_filename_mode': 'filename_mode',
         'basic_header_mode': 'header_mode', 'basic_banner_mode': 'header_mode',
+        'basic_output_date': 'output_date', 'watermark_output_date': 'output_date',
         'bytecode_const_noise': 'const_noise', 'bytecode_tail_noise': 'tail_noise',
         'bytecode_opcode_replacement': 'opcode_replacement',
         'bytecode_runtime_opcode_layer': 'runtime_opcode_layer', 'bytecode_per_code_runtime_opcode': 'per_code_runtime_opcode',
@@ -552,10 +593,17 @@ def apply_config(args, config):
         'bytecode_bytecode_decoy_island_limit': 'bytecode_decoy_island_limit',
         'bytecode_bytecode_decoy_island_width': 'bytecode_decoy_island_width',
         'bytecode_bytecode_decoy_island_growth': 'bytecode_decoy_island_growth',
-        'source_linearize_calls': 'source_linearize_calls', 'source_linearize': 'source_linearize_calls', 'source_local_rename': 'source_local_rename', 'source_local_rename_max': 'source_local_rename_max',
+        'source_linearize_calls': 'source_linearize_calls', 'source_linearize': 'source_linearize_calls',
+        'source_global_rename': 'source_global_rename', 'source_rename': 'source_global_rename',
+        'source_module_rename': 'source_module_rename', 'module_rename': 'source_module_rename',
+        'source_module_rename_exclude': 'source_module_rename_exclude', 'module_rename_exclude': 'source_module_rename_exclude',
+        'write_rename_mapping': 'write_rename_mapping', 'rename_mapping': 'write_rename_mapping',
+        'source_function_split': 'source_function_split', 'function_split': 'source_function_split',
         'source_dead_flow': 'source_dead_flow', 'source_dead_flow_blocks': 'source_dead_flow_blocks',
         'source_dead': 'source_dead_flow', 'source_dead_blocks': 'source_dead_flow_blocks',
         'source_vm': 'source_vm', 'source_vm_enabled': 'source_vm',
+        'source_vm_ir': 'source_vm_ir', 'vm_ir': 'source_vm_ir',
+        'source_vm_extension': 'source_vm_extension', 'vm_extension': 'source_vm_extension',
         'source_vm_full': 'source_vm_full', 'vm_full': 'source_vm_full',
         'source_vm_ratio': 'source_vm_ratio', 'source_vm_min_ops': 'source_vm_min_ops',
         'source_vm_max_ops': 'source_vm_max_ops', 'source_vm_max_functions': 'source_vm_max_functions', 'source_vm_include': 'source_vm_include',
@@ -571,7 +619,7 @@ def apply_config(args, config):
         'outer_loader_decoy_tuples': 'loader_decoy_tuples',
     }
     provided = getattr(args, '_provided_options', set())
-    for key, value in flat.items():
+    for key, value in list(flat.items()):
         key_norm = key.replace('-', '_')
         if key_norm == 'bytecode_enabled' and 'no_bytecode_obf' not in provided:
             setattr(args, 'no_bytecode_obf', not bool(value))
@@ -603,7 +651,7 @@ def apply_netease_profile(args):
         return args
     provided = set(getattr(args, '_provided_options', set()))
     profile = NETEASE_PROFILES[profile_name]
-    for key, value in profile.items():
+    for key, value in list(profile.items()):
         if key in provided:
             continue
         if isinstance(value, list):
@@ -611,4 +659,4 @@ def apply_netease_profile(args):
         else:
             setattr(args, key, value)
     args.netease_profile = profile_name
-    return args
+    return args\n

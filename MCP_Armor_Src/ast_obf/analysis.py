@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Conservative source call-graph and transformation budget analysis."""
-from __future__ import absolute_import
+
 
 import ast
 import fnmatch
@@ -58,11 +58,11 @@ class SourceModuleAnalysis(object):
 
     def finalize(self, predicate_ratio=70):
         candidates = 0
-        for info in self.functions.values():
+        for info in list(self.functions.values()):
             info.hot = any(fnmatch.fnmatch(info.name, pattern)
                            for pattern in self.hot_patterns)
             info.hot_depth = 0 if info.hot else None
-        pending = [item for item in self.functions.values() if item.hot]
+        pending = [item for item in list(self.functions.values()) if item.hot]
         while pending:
             current = pending.pop()
             for qualname in current.callees:
@@ -74,7 +74,7 @@ class SourceModuleAnalysis(object):
                     continue
                 target.hot_depth = depth
                 pending.append(target)
-        for info in self.functions.values():
+        for info in list(self.functions.values()):
             if info.hot_depth is not None and info.hot_depth <= 1:
                 info.budget = 0
             elif info.hot_depth == 2:
@@ -114,10 +114,10 @@ class SourceModuleAnalysis(object):
                 candidates += 1
         self.stats = {
             'functions': len(self.functions),
-            'hot': sum(1 for item in self.functions.values() if item.hot),
-            'reachable': sum(1 for item in self.functions.values()
+            'hot': sum(1 for item in list(self.functions.values()) if item.hot),
+            'reachable': sum(1 for item in list(self.functions.values())
                              if item.hot_depth is not None),
-            'escaped': sum(1 for item in self.functions.values()
+            'escaped': sum(1 for item in list(self.functions.values())
                            if item.escaped),
             'internal': candidates,
         }
@@ -241,7 +241,7 @@ class _ReferenceCollector(ast.NodeVisitor):
                 if info is not None:
                     info.loads += 1
             else:
-                for methods in self.result.class_methods.values():
+                for methods in list(self.result.class_methods.values()):
                     info = methods.get(node.attr)
                     if info is not None:
                         info.loads += 1
@@ -256,7 +256,7 @@ class _ReferenceCollector(ast.NodeVisitor):
     def visit_Str(self, node):
         if node.s in self.result.module_functions:
             self.result.string_names.add(node.s)
-        for methods in self.result.class_methods.values():
+        for methods in list(self.result.class_methods.values()):
             if node.s in methods:
                 self.result.string_names.add(node.s)
 
@@ -266,7 +266,7 @@ def analyze_source_tree(tree, path=None, hot_patterns=None,
     result = SourceModuleAnalysis(path, hot_patterns)
     _DefinitionCollector(result).visit(tree)
     _ReferenceCollector(result).visit(tree)
-    for info in result.functions.values():
+    for info in list(result.functions.values()):
         if info.loads > info.direct_calls or info.name in result.string_names:
             info.escaped = True
     return result.finalize(predicate_ratio)
@@ -292,12 +292,12 @@ def analyze_source_project(root, hot_patterns=None, predicate_ratio=70):
                     source, path, hot_patterns, predicate_ratio)
             except (SyntaxError, ValueError, TypeError):
                 continue
-    for path, analysis in analyses.items():
+    for path, analysis in list(analyses.items()):
         foreign_names = set()
         foreign_imported_names = set()
         foreign_attrs = set()
         foreign_strings = set()
-        for other_path, other in analyses.items():
+        for other_path, other in list(analyses.items()):
             if other_path == path:
                 continue
             foreign_names.update(other.loaded_names)
@@ -311,7 +311,7 @@ def analyze_source_project(root, hot_patterns=None, predicate_ratio=70):
         analysis.external_names = (
             foreign_imported_names | foreign_attrs | foreign_strings)
         escaped = set()
-        for info in analysis.functions.values():
+        for info in list(analysis.functions.values()):
             if (info.name in foreign_names or info.name in foreign_attrs or
                     info.name in foreign_strings):
                 info.escaped = True
@@ -350,4 +350,4 @@ class _AnalysisAnnotator(ast.NodeVisitor):
 def annotate_source_tree(tree, analysis):
     if analysis is not None:
         _AnalysisAnnotator(analysis).visit(tree)
-    return tree
+    return tree\n

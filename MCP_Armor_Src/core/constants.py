@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Opcode constants, presets and NetEase compatibility profiles."""
-from __future__ import absolute_import, print_function
 
-import opcode
+
+from MCP_Armor_Src.core import py27_opcode as opcode
 import sys
 
 
@@ -188,6 +188,55 @@ PRESETS = {
 
 NETEASE_PROFILES = {
     'none': {},
+    # Selected high-value layers: cold-function AST VM, verified ByteCode_Flow
+    # dispatch, recursive constant providers, and per-code template variation.
+    # This deliberately leaves opcode replacement off for Python 2/NetEase
+    # compatibility; callers can opt into it separately.
+    'priority': {
+        'preset': 'strong',
+        'loader_mode': 'cpickle',
+        'code_tuple_payload': True,
+        'source_project_analysis': True,
+        'source_flow_hardening': True,
+        'source_vm': True,
+        'source_vm_full': False,
+        'source_vm_ratio': 32,
+        'source_vm_min_ops': 8,
+        'source_vm_max_ops': 220,
+        'source_vm_max_functions': 8,
+        'source_vm_allow_loops': False,
+        'source_vm_dialects': 4,
+        'source_vm_flow_constants': True,
+        'source_internal_predicates': True,
+        'source_internal_predicate_ratio': 55,
+        'bytecode_flow': True,
+        'bytecode_flow_ratio': 60,
+        'bytecode_flow_max_edges': 10,
+        'bytecode_flow_loop_dispatch': False,
+        'bytecode_flow_block_seeds': True,
+        'bytecode_flow_block_seed_ratio': 55,
+        'bytecode_flow_block_shuffle': True,
+        'bytecode_flow_block_shuffle_ratio': 45,
+        'bytecode_strategy_variation': True,
+        'bytecode_strategy_seed': 0,
+        'code_tuple_field_shuffle': True,
+        'code_tuple_fragments': True,
+        'code_tuple_fragment_providers': True,
+        'code_tuple_provider_graph': True,
+        'code_tuple_provider_decoys': 4,
+        'code_const_arena': True,
+        'code_const_provider_graph': True,
+        'code_const_arena_decoys': 4,
+        'code_const_arena_limit': 1024,
+        'code_field_descriptors': True,
+        'code_provider_context_bind': True,
+        'code_fused_restore': True,
+        'loader_reference_cleanup': True,
+        'source_identity_variation': True,
+        'source_identity_weave': True,
+        'source_identity_ratio': 35,
+        'source_identity_max': 8,
+    },
     'safe': {
         'preset': 'safe',
         'loader_mode': 'netease-func',
@@ -349,7 +398,6 @@ NETEASE_PROFILES = {
         'bytecode_name_chaff': 12,
         'bytecode_entry_noise': 0,
         'bytecode_exception_decoys': 0,
-        'source_local_rename': True,
         'import_facade_layer': False,
         'slot_mirage': True,
         'slot_mirage_limit': 8,
@@ -394,8 +442,10 @@ NETEASE_PROFILES = {
 
 
 NETEASE_PROFILE_ALIASES = {
+    'netease-priority': 'priority',
+    'priority-strong': 'priority',
     'netease-safe': 'safe',
     'netease-strong': 'strong',
     'netease-strong-plus': 'strong-plus',
     'netease-diagnostic': 'diagnostic',
-}
+}\n

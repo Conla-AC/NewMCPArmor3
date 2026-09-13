@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """CPython and NetEase opcode map conversion."""
-from __future__ import absolute_import, print_function
 
-import opcode
+
+from MCP_Armor_Src.core import py27_opcode as opcode
 import random
 import types
 
@@ -15,6 +15,7 @@ from MCP_Armor_Src.core.constants import (
 )
 
 from MCP_Armor_Src.utils.encoding import (
+    byte_char, byte_value,
     random_ident,
 )
 
@@ -24,14 +25,14 @@ def remap_code_bytes(code_bytes, mapping):
     pos = 0
     size = len(code_bytes)
     while pos < size:
-        opv = ord(code_bytes[pos])
-        out.append(chr(mapping.get(opv, opv)))
+        opv = byte_value(code_bytes[pos])
+        out.append(byte_char(mapping.get(opv, opv)))
         pos += 1
         if opv >= HAVE_ARGUMENT and pos + 1 < size:
             out.append(code_bytes[pos])
             out.append(code_bytes[pos + 1])
             pos += 2
-    return ''.join(out)
+    return b''.join(out)
 
 
 def remap_code_object(co, mapping):
@@ -67,21 +68,21 @@ def load_mcs_opcode_map(version):
 
 
 def invert_opcode_map(mapping):
-    return dict((target, source) for source, target in mapping.items())
+    return dict((target, source) for source, target in list(mapping.items()))
 
 
 def runtime_table_to_stored_std(runtime_table, target_to_std):
     if not runtime_table:
         return {}
-    is_per_code = any(isinstance(value, dict) for value in runtime_table.values())
+    is_per_code = any(isinstance(value, dict) for value in list(runtime_table.values()))
     if is_per_code:
         output = {}
-        for code_id, table in runtime_table.items():
+        for code_id, table in list(runtime_table.items()):
             output[code_id] = dict((stored, target_to_std.get(target, target))
-                                   for stored, target in table.items())
+                                   for stored, target in list(table.items()))
         return output
     return dict((stored, target_to_std.get(target, target))
-                for stored, target in runtime_table.items())
+                for stored, target in list(runtime_table.items()))
 
 
 def _load_runtime_opcode_map(runtime, mcs_version):
@@ -102,7 +103,7 @@ def build_per_code_runtime_opcode_layer(co, mcs_version, runtime='mcs'):
         counter[0] += 1
         std_to_custom = make_same_category_opcode_map()
         custom_to_runtime = {}
-        for std_op, custom_op in std_to_custom.items():
+        for std_op, custom_op in list(std_to_custom.items()):
             custom_to_runtime[custom_op] = std_to_runtime.get(std_op, std_op)
         maps[code_id] = custom_to_runtime
         consts = []
@@ -120,7 +121,7 @@ def build_runtime_opcode_layer(co, mcs_version, runtime='mcs'):
     stored = remap_code_object(co, std_to_custom)
     std_to_runtime = _load_runtime_opcode_map(runtime, mcs_version)
     custom_to_runtime = {}
-    for std_op, custom_op in std_to_custom.items():
+    for std_op, custom_op in list(std_to_custom.items()):
         custom_to_runtime[custom_op] = std_to_runtime.get(std_op, std_op)
     return stored, custom_to_runtime
 
@@ -130,7 +131,7 @@ def encode_runtime_opcode_rows(table, decoys):
     tag = random_ident('rtop')
     salt = random.randint(1, 255)
     is_per_code = False
-    for _k, _v in table.items():
+    for _k, _v in list(table.items()):
         if isinstance(_v, dict):
             is_per_code = True
             break
@@ -162,7 +163,7 @@ def tunnel_code_object(co, runtime, mcs_version):
     else:
         raise SystemExit('bad opcode runtime: %s' % runtime)
     custom_to_runtime = {}
-    for std_op, custom_op in std_to_custom.items():
+    for std_op, custom_op in list(std_to_custom.items()):
         custom_to_runtime[custom_op] = std_to_runtime.get(std_op, std_op)
     return stored, custom_to_runtime
 
@@ -176,4 +177,4 @@ def encode_opcode_table(table, fake_count):
     for _ in range(fake_count):
         rows.append((random_ident('fake'), random.randint(0, 255), random.randint(0, 255)))
     random.shuffle(rows)
-    return rows, tag, salt
+    return rows, tag, salt\n
