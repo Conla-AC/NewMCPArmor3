@@ -62,6 +62,15 @@ source:
   string_xor_variants: 4   # maximum real decoder variants; small files adapt down to 2-3
   string_xor_decoys: 2     # maximum fake variants; small files adapt down to 1-2
   string_xor_debug: false   # print [DEBUG] ... Loaded for each decoder/decryption stage
+  string_hash_compare: false           # hash prefilter selected string equality comparisons
+  string_hash_mode: guard              # guard keeps exact equality; hash-only is experimental
+  string_hash_inline: false            # inline the hash expression at each comparison site
+  string_hash_inline_obfuscate: false  # add arithmetic noise to inline expressions
+  string_hash_inline_variants: false   # vary stable hash algorithm/parameters per site
+  string_hash_min_length: 6
+  string_hash_ratio: 100
+  string_hash_limit: 128
+  string_hash_exclude: []
   constant_pool: false     # source AST layer: module-local pool for safe strings
   constant_pool_min: 4
   constant_pool_max: 128

@@ -670,7 +670,25 @@ def obfuscate_file(src, dst, opts, rel=None):
                                opts.source_hot_patterns,
                                opts.source_vm_dialects,
                                opts.source_vm_flow_constants,
-                               opts.source_vm_exception_trap_ratio)
+                               opts.source_vm_exception_trap_ratio,
+                               source_string_hash_compare=getattr(
+                                   opts, 'source_string_hash_compare', False),
+                               source_string_hash_mode=getattr(
+                                   opts, 'source_string_hash_mode', 'guard'),
+                               source_string_hash_inline=getattr(
+                                   opts, 'source_string_hash_inline', False),
+                               source_string_hash_inline_obfuscate=getattr(
+                                   opts, 'source_string_hash_inline_obfuscate', False),
+                               source_string_hash_inline_variants=getattr(
+                                   opts, 'source_string_hash_inline_variants', False),
+                               source_string_hash_min_length=getattr(
+                                   opts, 'source_string_hash_min_length', 6),
+                               source_string_hash_ratio=getattr(
+                                   opts, 'source_string_hash_ratio', 100),
+                               source_string_hash_limit=getattr(
+                                   opts, 'source_string_hash_limit', 128),
+                               source_string_hash_exclude=getattr(
+                                   opts, 'source_string_hash_exclude', []))
         lazy_capsules = None
         if opts.lazy_function_capsules and not preserve_inner_code:
             manager_name = random_ident('lazy_manager')

@@ -197,6 +197,28 @@ def merge_options(args):
     opts.source_string_xor_variants = max(2, min(8, int(args.source_string_xor_variants)))
     opts.source_string_xor_decoys = max(0, min(8, int(args.source_string_xor_decoys)))
     opts.source_string_xor_debug = bool(args.source_string_xor_debug or opts.debug)
+    opts.source_string_hash_compare = bool(
+        getattr(args, 'source_string_hash_compare', False))
+    opts.source_string_hash_mode = getattr(
+        args, 'source_string_hash_mode', 'guard')
+    opts.source_string_hash_inline = bool(
+        getattr(args, 'source_string_hash_inline', False))
+    opts.source_string_hash_inline_obfuscate = bool(
+        getattr(args, 'source_string_hash_inline_obfuscate', False) and
+        opts.source_string_hash_inline)
+    opts.source_string_hash_inline_variants = bool(
+        getattr(args, 'source_string_hash_inline_variants', False) and
+        opts.source_string_hash_inline)
+    opts.source_string_hash_min_length = max(
+        1, int(getattr(args, 'source_string_hash_min_length', 6)))
+    opts.source_string_hash_ratio = max(
+        0, min(100, int(getattr(args, 'source_string_hash_ratio', 100))))
+    opts.source_string_hash_limit = max(
+        0, int(getattr(args, 'source_string_hash_limit', 128)))
+    opts.source_string_hash_exclude = list(
+        getattr(args, 'source_string_hash_exclude', ()) or ())
+    if opts.source_string_hash_mode not in ('guard', 'hash-only'):
+        raise ValueError('source_string_hash_mode must be guard or hash-only')
     opts.source_constant_pool = args.source_constant_pool
     opts.source_constant_pool_min = args.source_constant_pool_min
     opts.source_constant_pool_max = args.source_constant_pool_max
@@ -399,7 +421,8 @@ def merge_options(args):
         opts.per_code_runtime_opcode = False
         opts.inner_opcode_tunnel = False
     if (opts.source_global_rename or opts.source_linearize_calls or opts.source_schedule or opts.source_dead_flow or opts.source_vm or opts.control_flow_flatten or
-            opts.source_string_split or opts.source_string_xor or opts.source_constant_pool or
+            opts.source_string_split or opts.source_string_xor or
+            opts.source_string_hash_compare or opts.source_constant_pool or
             opts.source_constant_rewrite or opts.source_exception_shell or opts.source_parenthesis_noise or
             opts.source_comment_noise or opts.source_decompiler_carriers or
             opts.source_identity_weave or opts.source_tuple_arg_decoys or

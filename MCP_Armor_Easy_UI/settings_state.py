@@ -6,6 +6,7 @@ AST_CHECKS = [('global_rename', 'globally rename identifiers', '全局名称重�
  ('function_split', 'split functions / classes', '函数 / 类分割'),
  ('string_split', 'split string literals', '字符串分割'),
  ('string_xor', 'dynamic XOR strings', '动态 XOR 字符串加密'),
+ ('string_hash_compare', 'hash-guard string comparisons', '字符串比较哈希预筛选'),
  ('linearize_calls', 'linearize calls', '链式调用拆分'),
  ('constant_pool', 'constant pool', '常量池'),
  ('constant_rewrite', 'rewrite integer constants', '整数常量改写'),
@@ -134,7 +135,12 @@ def default_settings():
                   string_xor_mode='random', string_xor_text='MCP_Shiled',
                   string_xor_number=173, string_xor_min_length=4,
                   string_xor_limit=512, string_xor_variants=4, string_xor_decoys=2,
-                  string_xor_debug=False, string_split_parts=3)
+                   string_xor_debug=False, string_split_parts=3,
+                   string_hash_mode='guard', string_hash_inline=False,
+                   string_hash_inline_obfuscate=False,
+                   string_hash_inline_variants=False,
+                   string_hash_min_length=6, string_hash_ratio=100,
+                   string_hash_limit=128, string_hash_exclude='')
     return result
 
 

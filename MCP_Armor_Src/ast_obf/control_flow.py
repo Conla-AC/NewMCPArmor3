@@ -45,6 +45,10 @@ from MCP_Armor_Src.ast_obf.references import (
     obfuscate_source_references,
 )
 
+from MCP_Armor_Src.ast_obf.string_compare import (
+    obfuscate_source_string_comparisons,
+)
+
 from MCP_Armor_Src.ast_obf.structure import (
     linearize_source_calls,
     render_source_tree,
@@ -420,9 +424,19 @@ def build_source_tree(source, control_flow_flatten=False, control_flow_max_block
                       source_hot_patterns=None,
                       source_vm_dialects=1,
                       source_vm_flow_constants=False,
-                      source_vm_exception_trap_ratio=0):
+                      source_vm_exception_trap_ratio=0,
+                      source_string_hash_compare=False,
+                      source_string_hash_mode='guard',
+                      source_string_hash_inline=False,
+                      source_string_hash_inline_obfuscate=False,
+                      source_string_hash_inline_variants=False,
+                      source_string_hash_min_length=6,
+                      source_string_hash_ratio=100,
+                      source_string_hash_limit=128,
+                      source_string_hash_exclude=None):
     tree = ast.parse(source)
     source_string_xor_helpers = []
+    source_string_hash_helpers = []
     smoke_baseline = source_ast_smoke_snapshot(tree)
     source_ast_smoke_validate(tree, smoke_baseline, 'parse')
     if source_flow_hardening or source_analysis is not None:
@@ -476,6 +490,22 @@ def build_source_tree(source, control_flow_flatten=False, control_flow_max_block
                 'AST smoke failed at module-rename: docstring changed')
         smoke_baseline = module_snapshot
         source_ast_smoke_validate(tree, smoke_baseline, 'module-rename')
+    if source_string_hash_compare:
+        literal_info = collect_source_literal_protection(tree)
+        tree, source_string_hash_helpers, compare_count = \
+            obfuscate_source_string_comparisons(
+                tree, source_string_hash_mode,
+                source_string_hash_inline,
+                source_string_hash_inline_obfuscate,
+                source_string_hash_inline_variants,
+                source_string_hash_min_length,
+                source_string_hash_ratio,
+                source_string_hash_limit,
+                source_string_hash_exclude,
+                literal_info.protected)
+        if compare_count:
+            source_ast_smoke_validate(tree, smoke_baseline,
+                                      'string-hash-compare')
     # Hidden predicate parameters and every direct caller must be rewritten
     # while calls still have their original ``name(...)`` / ``self.name(...)``
     # shape.  Linearization turns those calls into temporary-bound callables,
@@ -575,8 +605,9 @@ def build_source_tree(source, control_flow_flatten=False, control_flow_max_block
     if restore_function_names:
         tree = restore_function_object_names(tree)
         source_ast_smoke_validate(tree, smoke_baseline, 'restore-function-names')
-    if source_string_xor_helpers:
-        tree = insert_source_string_xor_helpers(tree, source_string_xor_helpers)
+    if source_string_hash_helpers or source_string_xor_helpers:
+        tree = insert_source_string_xor_helpers(
+            tree, source_string_hash_helpers + source_string_xor_helpers)
         source_ast_smoke_validate(tree, smoke_baseline, 'string-xor-helpers')
     ast.fix_missing_locations(tree)
     return tree
@@ -649,7 +680,7 @@ def make_source_only_output(path, opts, source_linearize_calls=None, source_sche
             getattr(source_analysis, 'global_rename_plan', None) is not None or
             source_linearize_calls or source_schedule or control_flow_flatten or source_dead_flow or
             source_string_split or source_constant_pool or
-            source_string_xor or
+            source_string_xor or getattr(opts, 'source_string_hash_compare', False) or
             source_constant_rewrite or source_exception_shell or source_vm or
             source_reference_obf or
             source_flow_hardening or source_internal_predicates or
@@ -694,7 +725,25 @@ def make_source_only_output(path, opts, source_linearize_calls=None, source_sche
                              opts.source_hot_patterns,
                              opts.source_vm_dialects,
                              opts.source_vm_flow_constants,
-                             opts.source_vm_exception_trap_ratio)
+                             opts.source_vm_exception_trap_ratio,
+                             source_string_hash_compare=getattr(
+                                 opts, 'source_string_hash_compare', False),
+                             source_string_hash_mode=getattr(
+                                 opts, 'source_string_hash_mode', 'guard'),
+                             source_string_hash_inline=getattr(
+                                 opts, 'source_string_hash_inline', False),
+                             source_string_hash_inline_obfuscate=getattr(
+                                 opts, 'source_string_hash_inline_obfuscate', False),
+                             source_string_hash_inline_variants=getattr(
+                                 opts, 'source_string_hash_inline_variants', False),
+                             source_string_hash_min_length=getattr(
+                                 opts, 'source_string_hash_min_length', 6),
+                             source_string_hash_ratio=getattr(
+                                 opts, 'source_string_hash_ratio', 100),
+                             source_string_hash_limit=getattr(
+                                 opts, 'source_string_hash_limit', 128),
+                             source_string_hash_exclude=getattr(
+                                 opts, 'source_string_hash_exclude', []))
     rendered = render_source_tree(tree, source_parenthesis_noise)
     if source_comment_noise:
         rendered = add_source_comment_noise(rendered, opts.source_comment_noise_count)
@@ -738,7 +787,16 @@ def compile_source(path, filename_mode, control_flow_flatten=False, control_flow
                    source_hot_patterns=None,
                    source_vm_dialects=1,
                    source_vm_flow_constants=False,
-                   source_vm_exception_trap_ratio=0):
+                   source_vm_exception_trap_ratio=0,
+                   source_string_hash_compare=False,
+                   source_string_hash_mode='guard',
+                   source_string_hash_inline=False,
+                   source_string_hash_inline_obfuscate=False,
+                   source_string_hash_inline_variants=False,
+                   source_string_hash_min_length=6,
+                   source_string_hash_ratio=100,
+                   source_string_hash_limit=128,
+                   source_string_hash_exclude=None):
     source = _read_source_text(path)
     filename = path
     if filename_mode == 'mem':
@@ -750,7 +808,7 @@ def compile_source(path, filename_mode, control_flow_flatten=False, control_flow
             (getattr(getattr(source_analysis, 'global_rename_plan', None),
                  'excluded', False) is False and
          getattr(source_analysis, 'global_rename_plan', None) is not None) or
-            source_linearize_calls or source_schedule or control_flow_flatten or source_dead_flow or restore_function_names or source_string_split or source_string_xor or source_constant_pool or source_constant_rewrite or source_exception_shell or source_vm or source_reference_obf or source_tuple_arg_decoys or source_identity_weave or source_decompiler_carriers or source_flow_hardening or source_internal_predicates):
+            source_linearize_calls or source_schedule or control_flow_flatten or source_dead_flow or restore_function_names or source_string_split or source_string_xor or source_string_hash_compare or source_constant_pool or source_constant_rewrite or source_exception_shell or source_vm or source_reference_obf or source_tuple_arg_decoys or source_identity_weave or source_decompiler_carriers or source_flow_hardening or source_internal_predicates):
         tree = build_source_tree(source, control_flow_flatten, control_flow_max_blocks,
                                  source_linearize_calls,
                                  source_schedule, source_schedule_max_exprs, source_schedule_window,
@@ -789,7 +847,16 @@ def compile_source(path, filename_mode, control_flow_flatten=False, control_flow
                                  source_hot_patterns,
                                  source_vm_dialects,
                                  source_vm_flow_constants,
-                                 source_vm_exception_trap_ratio)
+                                 source_vm_exception_trap_ratio,
+                                 source_string_hash_compare=source_string_hash_compare,
+                                 source_string_hash_mode=source_string_hash_mode,
+                                 source_string_hash_inline=source_string_hash_inline,
+                                 source_string_hash_inline_obfuscate=source_string_hash_inline_obfuscate,
+                                 source_string_hash_inline_variants=source_string_hash_inline_variants,
+                                 source_string_hash_min_length=source_string_hash_min_length,
+                                 source_string_hash_ratio=source_string_hash_ratio,
+                                 source_string_hash_limit=source_string_hash_limit,
+                                 source_string_hash_exclude=source_string_hash_exclude)
         rendered = render_source_tree(tree, False)
         if '_mcp_' in rendered:
             rendered = obfuscate_reserved_generated_identifiers(rendered)

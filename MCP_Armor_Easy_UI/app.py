@@ -789,6 +789,7 @@ class EasyApp(tk.Tk):
         win.checks(win.body, AST_CHECKS, original, label)
         strings = ttk.LabelFrame(win.body, text=label('String encryption / splitting', '字符串加密 / 分割'), padding=8); strings.pack(fill='x', pady=8)
         modes = {'random': label('Dynamic XOR', '动态 XOR'), 'text': label('Text key', '文本密钥'), 'number': label('Byte key', '数值密钥'), 'chacha': '_chacha'}
+        hash_modes = {'guard': label('Hash prefilter + exact compare', '哈希预筛选 + 原始比较'), 'hash-only': label('Hash-only (experimental)', '仅哈希（实验）')}
         win.field(strings, 'string_xor_mode', label('Cipher / key mode', '加密 / 密钥模式'), modes[original['string_xor_mode']], tuple(modes.values()))
         win.field(strings, 'string_xor_text', label('Text key', '文本密钥'), original['string_xor_text'])
         for key, en, cn, bounds in (
@@ -799,6 +800,19 @@ class EasyApp(tk.Tk):
                 ('string_xor_decoys', 'Decoy variants', '诱饵变体', (0, 8)),
                 ('string_split_parts', 'Split parts', '字符串分割份数', (2, 32))):
             win.field(strings, key, label(en, cn), original[key], bounds=bounds)
+        win.checks(strings, [
+            ('string_hash_inline', 'Inline hash at each comparison', '每个比较点内联哈希'),
+            ('string_hash_inline_obfuscate', 'Obfuscate inline hash', '混淆内联哈希'),
+            ('string_hash_inline_variants', 'Vary inline hash variants', '内联哈希算法变体'),
+        ], original, label)
+        win.field(strings, 'string_hash_mode', label('Hash mode', '哈希模式'),
+                  hash_modes[original['string_hash_mode']], tuple(hash_modes.values()))
+        for key, en, cn, bounds in (
+                ('string_hash_min_length', 'Hash minimum length', '哈希最短字符串长度', (1, 100000)),
+                ('string_hash_ratio', 'Hash comparison ratio %', '哈希比较比例 %', (0, 100)),
+                ('string_hash_limit', 'Hash comparison limit', '哈希比较数量上限', (0, 100000))):
+            win.field(strings, key, label(en, cn), original[key], bounds=bounds)
+        win.field(strings, 'string_hash_exclude', label('Hash exclude patterns', '哈希排除规则'), original['string_hash_exclude'])
         win.checks(strings, [('string_xor_debug', 'String debug', '字符串调试')], original, label)
         vm = ttk.LabelFrame(win.body, text=label('VM classes (independent)', 'VM 类（独立选项）'), padding=8); vm.pack(fill='x', pady=8)
         win.checks(vm, VM_CHECKS, original, label)
@@ -845,6 +859,7 @@ class EasyApp(tk.Tk):
                     value = var.get()
                     if key in ('ast_level', 'bytecode_level'): value = next(k for k, v in names.items() if v == value)
                     elif key == 'string_xor_mode': value = next(k for k, v in modes.items() if v == value)
+                    elif key == 'string_hash_mode': value = next(k for k, v in hash_modes.items() if v == value)
                     elif isinstance(original.get(key), int) and not isinstance(original[key], bool):
                         value = int(value)
                         control = win.controls[key]
@@ -862,6 +877,7 @@ class EasyApp(tk.Tk):
                 value = original[key]
                 if key in ('ast_level', 'bytecode_level'): value = names[value]
                 elif key == 'string_xor_mode': value = modes[value]
+                elif key == 'string_hash_mode': value = hash_modes[value]
                 var.set(value)
         def ok():
             if apply_values():
@@ -1131,10 +1147,13 @@ class EasyApp(tk.Tk):
         for key in s:
             if key.startswith('vm_') and key not in ('vm_ir', 'vm_extension'):
                 source[key] = split_patterns(s[key]) if key in ('vm_include', 'vm_exclude') else s[key]
-            if key.startswith('string_xor_') or key == 'string_split_parts': source[key] = s[key]
+            if (key.startswith('string_xor_') or key.startswith('string_hash_') or
+                    key == 'string_split_parts'):
+                source[key] = s[key]
         if not ast_on or not (s['vm_ir'] or s['vm_extension']): source['vm_ratio'] = 0
         source['module_rename_exclude'] = split_patterns(other['module_rename_exclude'])
         source['ast_exclude'] = split_patterns(other['ast_exclude'])
+        source['string_hash_exclude'] = split_patterns(s['string_hash_exclude'])
         bytecode = {key: byte_on and bool(s[key]) for key, _, _ in BYTE_CHECKS + ADVANCED_BYTE_CHECKS}
         bytecode.update(enabled=byte_on, flow=byte_on, flow_ratio=s['flow_ratio'], flow_max_edges=s['flow_max_edges'],
                         opcode_replacement=mapped, opcode_runtime='mcs' if mcs else 'std',
