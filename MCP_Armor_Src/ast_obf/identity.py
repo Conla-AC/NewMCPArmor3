@@ -531,4 +531,4 @@ def inject_source_decompiler_carriers(tree, count=0, exception_lattice=True,
         statements.extend(make_runtime_type_table_carrier(index))
     insert_source_string_xor_helpers(tree, statements)
     ast.fix_missing_locations(tree)
-    return tree, count\n
+    return tree, count

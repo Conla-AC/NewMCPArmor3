@@ -1016,4 +1016,4 @@ def apply_global_rename(tree, plan):
             insert_at += 1
         tree.body[insert_at:insert_at] = aliases
     ast.fix_missing_locations(tree)
-    return tree\n
+    return tree

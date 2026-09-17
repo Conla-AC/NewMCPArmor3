@@ -95,4 +95,4 @@ def require_python27(configured=None):
         raise Python27Error(
             'target backend requires CPython 2.7, but %s reported %s' %
             (executable, detail))
-    return executable\n
+    return executable

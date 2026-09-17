@@ -187,4 +187,4 @@ SOURCE_VM_CMPOPS = {
     ast.Lt: 'LT', ast.LtE: 'LE', ast.Eq: 'EQ', ast.NotEq: 'NE',
     ast.Gt: 'GT', ast.GtE: 'GE', ast.Is: 'IS', ast.IsNot: 'ISNOT',
     ast.In: 'IN', ast.NotIn: 'NOTIN',
-}\n
+}

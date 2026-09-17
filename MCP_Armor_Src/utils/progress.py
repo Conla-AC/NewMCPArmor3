@@ -41,4 +41,4 @@ def run_file_with_progress(callback, src, dst, opts, rel, index, total):
         emit_progress('error', index, total, rel, exc)
         raise
     emit_progress('done', index, total, rel)
-    return result\n
+    return result

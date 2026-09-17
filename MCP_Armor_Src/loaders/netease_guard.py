@@ -248,4 +248,4 @@ def %(guard)s(%(module)s, %(key)s, %(scope)s):
            binding_seed=visual_int(binding_seed),
            scramble_seed=visual_int(scramble_seed), key_name=key_name,
            module_name=module_name, key_repr=repr(stored_key))
-    return source\n
+    return source

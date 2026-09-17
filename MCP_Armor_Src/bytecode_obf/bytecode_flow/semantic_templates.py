@@ -153,4 +153,4 @@ def apply_semantic_templates(co, code_bytes, consts, varnames,
         co, transformed, consts, new_varnames)
     if not allowed:
         return code_bytes, varnames, 0
-    return transformed, tuple(new_varnames), len(selected)\n
+    return transformed, tuple(new_varnames), len(selected)

@@ -775,4 +775,4 @@ def enforce_source_compliance(source_path, folder=None, excluded_roots=None):
     report = scan_source(source_path, folder, excluded_roots)
     if not report.valid:
         raise StaticCheckFailure(report)
-    return report\n
+    return report

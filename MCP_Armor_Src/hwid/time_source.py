@@ -31,4 +31,4 @@ def taobao_timestamp(timeout=6):
             return _timestamp_from_response(fetch_json(url, timeout, True))
         except Exception as exc:
             errors.append('%s: %s' % (url, exc))
-    raise IOError('Taobao time API unavailable (%s)' % '; '.join(errors))\n
+    raise IOError('Taobao time API unavailable (%s)' % '; '.join(errors))

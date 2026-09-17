@@ -902,4 +902,4 @@ class SourceVMCompiler(object):
         value = self.const_reg(None)
         self.emit('RETURN', value)
         self.release_reg(value)
-        return self\n
+        return self

@@ -1329,4 +1329,4 @@ def prepare_single_global_rename(src, opts):
         root, excluded, allowed)
     for path, analysis in list(opts.source_project_analyses.items()):
         analysis.global_rename_plan = rename_project.plan_for(path)
-    return rename_project\n
+    return rename_project

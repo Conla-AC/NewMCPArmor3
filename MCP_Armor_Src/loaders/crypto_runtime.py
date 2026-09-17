@@ -307,4 +307,4 @@ def _mcp_fake4(x):
     for i in range(len(x)):
         s = ((s * 0x01000193) ^ ord(x[i])) & 0xFFFFFFFF
     return s
-'''\n
+'''

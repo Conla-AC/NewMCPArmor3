@@ -123,4 +123,4 @@ class ControlFlowGraph(object):
         for edge in self.edges:
             if edge.source not in self.blocks or edge.target not in self.blocks:
                 raise ValueError('edge references a foreign block')
-        return True\n
+        return True

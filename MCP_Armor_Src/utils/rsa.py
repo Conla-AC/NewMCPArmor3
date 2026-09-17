@@ -83,4 +83,4 @@ def generate_key(bits=512):
     while _gcd(e, phi) != 1:
         e += 2
     d = modinv(e, phi)
-    return n, e, d\n
+    return n, e, d

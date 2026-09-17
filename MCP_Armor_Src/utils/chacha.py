@@ -119,4 +119,4 @@ def chacha12(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL):
 
 def chacha20(data, key=WQSWORD_CHACHA_KEY, tail=WQSWORD_CHACHA_TAIL):
     """ChaCha20 快捷函数"""
-    return chacha_crypt(data, key, tail, 20)\n
+    return chacha_crypt(data, key, tail, 20)

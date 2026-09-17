@@ -774,4 +774,4 @@ class SourceExceptionShell(ast.NodeTransformer):
         elif not isinstance(node.finalbody[-1], ast.Pass):
             node.finalbody.append(ast.Pass())
         ast.fix_missing_locations(node)
-        return node\n
+        return node

@@ -303,4 +303,4 @@ def build_arg_parser():
     parser.add_argument('--inner-opcode-tunnel', action='store_true', help='EXPERIMENTAL: store payload under custom opcode map and restore before exec')
     parser.add_argument('--opcode-runtime', choices=['std', 'mcs'], default='std', help='opcode tunnel restore target')
     parser.add_argument('--mcs-opmap-version', type=int, default=1, help='NetEase opcode map version for --opcode-runtime mcs')
-    return parser\n
+    return parser

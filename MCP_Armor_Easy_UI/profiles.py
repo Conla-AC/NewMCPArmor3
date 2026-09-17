@@ -737,4 +737,4 @@ def profile_summary(ast_level, bytecode_level=None):
         '中强度': 'ByteCode_Flow 50% + 块种子 + JMP 花指令/oparg 错位',
         '高强度': 'ByteCode_Flow 75% + 块重排 + JMP 花指令/oparg 错位',
     }[bytecode_level]
-    return 'AST：%s（%d 项）  ·  字节码：%s' % (ast_level, enabled, bytecode)\n
+    return 'AST：%s（%d 项）  ·  字节码：%s' % (ast_level, enabled, bytecode)

@@ -1094,4 +1094,4 @@ def audit_module_links(output_root, project, wrapped_modules=False):
         'issues': 0,
         'checked': checked,
         'unresolved_dynamic': unresolved,
-    }\n
+    }

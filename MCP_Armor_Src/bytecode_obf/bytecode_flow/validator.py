@@ -223,4 +223,4 @@ def validate_code_object_layout(co, code_bytes=None, consts=None, names=None,
         # bad targets and bad table indexes remain hard failures.
         stack_complete = False
     return BytecodeValidationResult(
-        True, None, len(reachable), max_stack, stack_complete)\n
+        True, None, len(reachable), max_stack, stack_complete)

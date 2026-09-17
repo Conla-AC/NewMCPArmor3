@@ -143,4 +143,4 @@ def inject_internal_predicates(tree):
         return tree, 0
     tree = InternalPredicateTransformer(collector).visit(tree)
     ast.fix_missing_locations(tree)
-    return tree, collector.count\n
+    return tree, collector.count

@@ -14,4 +14,4 @@ __all__ = [
     'StaticCheckFailure',
     'enforce_source_compliance',
     'scan_source',
-]\n
+]

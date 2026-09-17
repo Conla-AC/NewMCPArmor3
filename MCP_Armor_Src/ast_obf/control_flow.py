@@ -799,4 +799,4 @@ def compile_source(path, filename_mode, control_flow_flatten=False, control_flow
         # coordinates.  Source-only mode already follows this route, so this
         # also keeps AST semantics consistent when bytecode protection is on.
         return compile(rendered, filename, 'exec', 0, True)
-    return compile(source, filename, 'exec', 0, True)\n
+    return compile(source, filename, 'exec', 0, True)

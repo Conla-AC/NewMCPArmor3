@@ -221,4 +221,4 @@ def split_project_functions(root, include=None, exclude=None):
             if rel in excluded or os.path.normcase(name) in excluded:
                 continue
             count += _split_file(os.path.join(current, name))
-    return count\n
+    return count

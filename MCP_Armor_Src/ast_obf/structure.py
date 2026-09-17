@@ -670,4 +670,4 @@ class SourceScheduleTransformer(ast.NodeTransformer):
 def schedule_source_execution(tree, max_exprs=4, window=8):
     tree = SourceScheduleTransformer(max_exprs, window).visit(tree)
     ast.fix_missing_locations(tree)
-    return tree\n
+    return tree

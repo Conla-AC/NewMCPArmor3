@@ -65,4 +65,4 @@ def rebuild_code(co, consts=None, code_bytes=None, filename=None, name=None, fir
                           _code_names(varnames), _code_string(filename),
                           _code_string(name), firstlineno, lnotab,
                           _code_names(co.co_freevars),
-                          _code_names(co.co_cellvars))\n
+                          _code_names(co.co_cellvars))

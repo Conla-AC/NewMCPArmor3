@@ -89,4 +89,4 @@ class ScrollDialog(tk.Toplevel):
             widget = ttk.Checkbutton(grid, text=label(en, cn), variable=var)
             widget.grid(row=i // 2, column=i % 2, sticky='w', padx=3, pady=4)
             self.vars[key], self.controls[key] = var, widget
-        return grid\n
+        return grid

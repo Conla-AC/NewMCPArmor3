@@ -93,4 +93,4 @@ def permute_local_slots(co, code_bytes, varnames, limit=8, seed=0):
     reordered = list(original_varnames)
     for old, new in mapping.items():
         reordered[new] = original_varnames[old]
-    return b''.join(output), tuple(reordered), len(mapping)\n
+    return b''.join(output), tuple(reordered), len(mapping)

@@ -409,4 +409,4 @@ def merge_options(args):
         opts.loader_mode = 'function'
     if opts.inner_opcode_tunnel and opts.loader_mode not in ('netease-func', 'function'):
         opts.loader_mode = 'marshal'
-    return opts\n
+    return opts

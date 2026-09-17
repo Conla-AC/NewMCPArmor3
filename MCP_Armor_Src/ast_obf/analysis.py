@@ -350,4 +350,4 @@ class _AnalysisAnnotator(ast.NodeVisitor):
 def annotate_source_tree(tree, analysis):
     if analysis is not None:
         _AnalysisAnnotator(analysis).visit(tree)
-    return tree\n
+    return tree

@@ -448,4 +448,4 @@ NETEASE_PROFILE_ALIASES = {
     'netease-strong': 'strong',
     'netease-strong-plus': 'strong-plus',
     'netease-diagnostic': 'diagnostic',
-}\n
+}

@@ -27,4 +27,4 @@ def fetch_json(url, timeout=6, no_cache=False):
         response.close()
     if not isinstance(payload, str):
         payload = payload.decode('utf-8')
-    return json.loads(payload)\n
+    return json.loads(payload)

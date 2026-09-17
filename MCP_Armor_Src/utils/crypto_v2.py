@@ -440,4 +440,4 @@ def decrypt_payload(encrypted, key32, nonce24, banner=b''):
     pad_len = struct.unpack('<H', padded[:2])[0] & 0x3FF
     modified = padded[2 + pad_len:]
     compressed = _xor_head(modified, key32[:2])
-    return zlib.decompress(compressed)\n
+    return zlib.decompress(compressed)

@@ -37,4 +37,4 @@ __all__ = [
     'permute_local_slots',
     'apply_semantic_templates',
     'audit_bytecode_flow',
-]\n
+]

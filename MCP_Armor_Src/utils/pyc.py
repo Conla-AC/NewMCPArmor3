@@ -23,4 +23,4 @@ def build_timestamp_pyc(code, timestamp=None, source_size=0):
         code,
         int(timestamp) & 0xFFFFFFFF,
         int(source_size) & 0xFFFFFFFF,
-    ))\n
+    ))

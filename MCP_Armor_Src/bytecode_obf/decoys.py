@@ -319,4 +319,4 @@ def build_dead_bad_bytecode(count, bad_units=3, nop_bloat=0, stop_bloat=0, arg_p
             chunks.append(byte_char(NOP))
         else:
             chunks.append(poison)
-    return b''.join(chunks)\n
+    return b''.join(chunks)

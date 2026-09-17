@@ -48,4 +48,4 @@ def machine_fingerprint():
 
 
 def encrypted_hwid():
-    return xor_encrypt_hex(machine_fingerprint())\n
+    return xor_encrypt_hex(machine_fingerprint())

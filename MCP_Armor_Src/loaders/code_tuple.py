@@ -1392,4 +1392,4 @@ def %(code_tuple_load_name)s(%(raw_name)s, %(pickle_name)s, %(types_name)s, %(re
     %(code_arg)s = %(lambda_code_type_name)s(*%(tuple_name)s)
 %(debug_tuple_complete)s
     return %(code_arg)s
-''' % values\n
+''' % values

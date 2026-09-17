@@ -177,4 +177,4 @@ def encode_opcode_table(table, fake_count):
     for _ in range(fake_count):
         rows.append((random_ident('fake'), random.randint(0, 255), random.randint(0, 255)))
     random.shuffle(rows)
-    return rows, tag, salt\n
+    return rows, tag, salt

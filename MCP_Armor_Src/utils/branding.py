@@ -119,4 +119,4 @@ def add_mcp_shiled_header(data, mode='docstring', output_date=None):
         insert_at += 1
     if str(mode or 'docstring').strip().lower() == 'docstring':
         insert_at = max(insert_at, _source_prologue_end(data))
-    return ''.join(lines[:insert_at]) + header + ''.join(lines[insert_at:])\n
+    return ''.join(lines[:insert_at]) + header + ''.join(lines[insert_at:])

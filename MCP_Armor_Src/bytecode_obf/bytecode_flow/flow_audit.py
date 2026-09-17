@@ -48,4 +48,4 @@ def audit_bytecode_flow(code_bytes, ngram_width=4):
         'max_ngram_repeat': max(list(counts.values()) or [0]),
         'stack_safe': bool(graph.stack_safe),
         'frame_candidate': bool(graph.reachable_edges_stack_compatible()),
-    }\n
+    }

@@ -1030,4 +1030,4 @@ def make_loader(code, options):
         'payload_seal_code': _build_payload_seal_code(encoded, names),
         'payload_load_code': payload_load_code,
     })
-    return LOADER_TEMPLATE % names\n
+    return LOADER_TEMPLATE % names

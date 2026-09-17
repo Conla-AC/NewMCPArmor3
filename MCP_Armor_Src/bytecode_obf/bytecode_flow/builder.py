@@ -172,4 +172,4 @@ def build_control_flow_graph(code_bytes, extra_leaders=None):
     graph.has_exception_flow = any(opcode.opname[item.opcode] in EXCEPTION_NAMES
                                    for item in instructions)
     graph.validate()
-    return graph\n
+    return graph

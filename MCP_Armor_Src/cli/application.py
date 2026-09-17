@@ -108,4 +108,4 @@ def main(argv=None):
             _print_cli('wrote %s | %s' % (args.output, result))
     except StaticCheckFailure as error:
         sys.stderr.write(str(error) + '\n')
-        raise SystemExit(4)\n
+        raise SystemExit(4)

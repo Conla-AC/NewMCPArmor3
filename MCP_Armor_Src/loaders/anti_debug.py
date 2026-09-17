@@ -247,4 +247,4 @@ def %(codecheck)s(%(code)s, %(token)s):
         'anti_debug_pre_code': pre_code,
         'anti_debug_raw_code': raw_code,
         'anti_debug_code_code': code_code,
-    }\n
+    }

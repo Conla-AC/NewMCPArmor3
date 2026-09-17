@@ -456,4 +456,4 @@ def build_loader_cleanup_code(names, enabled=False, debug=False):
         lines.append('    %s = None' % names[local_name])
     if debug:
         lines.append(debug_print_code(True, 'MCP Loader ReferenceCleanupComplete', 4))
-    return '\n'.join(lines)\n
+    return '\n'.join(lines)

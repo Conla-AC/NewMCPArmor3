@@ -293,4 +293,4 @@ def apply_decoy_islands(co, code_bytes, true_const_index, ratio=20, limit=2,
             return code_bytes, 0
     except (IndexError, KeyError, TypeError, ValueError):
         return code_bytes, 0
-    return transformed, len(specs)\n
+    return transformed, len(specs)

@@ -127,4 +127,4 @@ def instruction_stack_effect(item, edge_kind=None):
     if name in ('SETUP_EXCEPT', 'SETUP_FINALLY', 'SETUP_WITH',
                 'WITH_CLEANUP', 'END_FINALLY'):
         return None
-    return None\n
+    return None

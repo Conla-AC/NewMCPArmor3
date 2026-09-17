@@ -638,4 +638,4 @@ def obfuscate_code_with_options(code, opts, depth=0):
         opts.bytecode_flow_block_shuffle_max_blocks,
         opts.bytecode_decoy_islands, opts.bytecode_decoy_island_ratio,
         opts.bytecode_decoy_island_limit, opts.bytecode_decoy_island_width,
-        opts.bytecode_decoy_island_growth, opts.bytecode_flow_loop_dispatch)\n
+        opts.bytecode_decoy_island_growth, opts.bytecode_flow_loop_dispatch)

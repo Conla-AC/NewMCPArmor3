@@ -78,4 +78,4 @@ def relocate_stream(graph, prefix='', before=None, after=None,
             item, layout, jump_overrides.get(item.offset)))
         output.append(after.get(item.offset, ''))
     output.append(suffix)
-    return b''.join(output), layout\n
+    return b''.join(output), layout

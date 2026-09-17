@@ -228,4 +228,4 @@ def build_decoy_opcode_rows(count):
     for _ in range(max(0, count)):
         rows.append((random_ident('op'), random.randint(0, 999999), (random.randint(0, 255), random.randint(0, 255), random.randint(0, 999999))))
     random.shuffle(rows)
-    return rows\n
+    return rows

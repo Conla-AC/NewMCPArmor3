@@ -1245,4 +1245,4 @@ def virtualize_source_functions(tree, ratio=15, min_ops=8, max_ops=160,
         total += transformer.count
         if max_functions:
             remaining -= transformer.count
-    return tree, total\n
+    return tree, total

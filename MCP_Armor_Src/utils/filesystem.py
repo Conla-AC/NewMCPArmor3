@@ -54,4 +54,4 @@ def ensure_dir(path):
 
 
 def relpath(path, root):
-    return os.path.relpath(path, root).replace('\\', '/')\n
+    return os.path.relpath(path, root).replace('\\', '/')

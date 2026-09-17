@@ -419,4 +419,4 @@ def make_vm_entry(func, globals_dict=None):
     def entry(*args, **kwargs):
         return _run(payload, args, kwargs)
 
-    return entry\n
+    return entry

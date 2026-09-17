@@ -763,4 +763,4 @@ def %(runner)s(%(payload)s, %(argv)s, %(gate)s):
         for child in ast.walk(statement):
             if isinstance(child, (ast.FunctionDef, ast.ClassDef)):
                 child._mcp_source_synthetic = True
-    return statements\n
+    return statements

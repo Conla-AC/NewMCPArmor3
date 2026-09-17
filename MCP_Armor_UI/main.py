@@ -19,4 +19,4 @@ if __name__ == "__main__":
         argv.remove("--mcparmor-cli")
         main_run(argv)
     else:
-        main()\n
+        main()

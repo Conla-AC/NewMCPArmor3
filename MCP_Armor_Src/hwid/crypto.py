@@ -33,4 +33,4 @@ def xor_encrypt_hex(value, key=HWID_XOR_KEY):
 def xor_decrypt_hex(value, key=HWID_XOR_KEY):
     raw = binascii.unhexlify(_as_bytes(value))
     decoded = bytes(xor_bytes(raw, key))
-    return decoded.decode('utf-8')\n
+    return decoded.decode('utf-8')

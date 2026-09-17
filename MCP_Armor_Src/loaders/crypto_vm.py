@@ -122,4 +122,4 @@ def virtualize_crypto_source(enabled=True):
               mapping['_mcp_d0'], mapping['_mcp_d1'], mapping['_mcp_d2'], mapping['_mcp_d3'],
               mapping['_mcp_fake0'], mapping['_mcp_fake1'], mapping['_mcp_fake2'], mapping['_mcp_fake3'], mapping['_mcp_fake4'])
     _cached[cache_key] = result
-    return result\n
+    return result

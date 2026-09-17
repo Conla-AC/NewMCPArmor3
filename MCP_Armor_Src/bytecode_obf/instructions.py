@@ -1065,4 +1065,4 @@ def bytecode_extended_arg_prefixes(code_bytes, interval=11, limit=6):
     if not selected:
         return code_bytes
     prefix = byte_char(EXTENDED_ARG) + '\x00\x00'
-    return insert_bytecode_blocks(code_bytes, dict((old_pos, prefix) for old_pos in selected))\n
+    return insert_bytecode_blocks(code_bytes, dict((old_pos, prefix) for old_pos in selected))

@@ -22,4 +22,4 @@ __all__ = [
     'is_free_mode',
     'machine_fingerprint',
     'validate_license',
-]\n
+]

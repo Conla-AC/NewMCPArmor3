@@ -228,4 +228,4 @@ def format_cli_failure(status):
         rows.append('EXPIRES: %s' % status.expires)
     if status.source:
         rows.append('LICENSE_SERVER: %s' % status.source)
-    return '\n'.join(rows)\n
+    return '\n'.join(rows)

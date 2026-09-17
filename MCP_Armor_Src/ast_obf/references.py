@@ -258,4 +258,4 @@ def obfuscate_source_references(tree, ratio=35, excludes=None, variants=3,
             repair(child, current_line, current_col)
     repair(tree)
     ast.fix_missing_locations(tree)
-    return tree, transformer.count\n
+    return tree, transformer.count

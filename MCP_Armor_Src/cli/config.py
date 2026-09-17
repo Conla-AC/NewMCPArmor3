@@ -659,4 +659,4 @@ def apply_netease_profile(args):
         else:
             setattr(args, key, value)
     args.netease_profile = profile_name
-    return args\n
+    return args

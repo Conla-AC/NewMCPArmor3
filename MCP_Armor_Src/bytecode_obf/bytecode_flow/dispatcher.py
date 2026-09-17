@@ -754,4 +754,4 @@ def apply_state_dispatcher(co, code_bytes, consts, varnames,
         co, transformed, consts, varnames)
     if not frame_ok:
         return code_bytes, original_consts, original_varnames, 0
-    return transformed, consts, varnames, len(graph.blocks)\n
+    return transformed, consts, varnames, len(graph.blocks)

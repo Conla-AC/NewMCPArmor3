@@ -175,4 +175,4 @@ if len(OFFICIAL_MODULES) != OFFICIAL_MODULE_COUNT:
 
 
 def is_whitelisted_module(module_name):
-    return bool(module_name and module_name in OFFICIAL_MODULES)\n
+    return bool(module_name and module_name in OFFICIAL_MODULES)

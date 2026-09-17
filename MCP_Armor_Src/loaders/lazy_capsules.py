@@ -628,4 +628,4 @@ def build_lazy_capsule_loader_parts(entries, options, names,
         'lazy_capsule_table_code': '%s = %r' % (table_name, records),
         'lazy_capsule_top_code': '\n'.join(lines),
         'lazy_capsule_setup_code': '\n'.join(setup_lines),
-    }\n
+    }

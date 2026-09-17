@@ -77,4 +77,4 @@ hasfree = [opmap[name] for name in (
 cmp_op = (
     '<', '<=', '==', '!=', '>', '>=', 'in', 'not in', 'is', 'is not',
     'exception match', 'BAD',
-)\n
+)

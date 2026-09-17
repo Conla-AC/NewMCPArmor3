@@ -178,4 +178,4 @@ def apply_basic_block_shuffle(co, code_bytes, ratio=35, max_blocks=192,
     original = [block.start for block in graph.blocks]
     changed = sum(1 for index, block in enumerate(order)
                   if block.start != original[index])
-    return transformed, changed\n
+    return transformed, changed

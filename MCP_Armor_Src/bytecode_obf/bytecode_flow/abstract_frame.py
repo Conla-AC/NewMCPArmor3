@@ -549,4 +549,4 @@ def analyze_code_tree(code, stored_to_logical=None):
             [result.max_stack for _item, result in results] or [0]),
         'diagnostics': diagnostics,
         'results': results,
-    }\n
+    }

@@ -127,4 +127,4 @@ def run_target_job(operation, source, output, options, rel=None, args=None):
         try:
             os.remove(request_path)
         except OSError:
-            pass\n
+            pass

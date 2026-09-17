@@ -239,4 +239,4 @@ def apply_block_seed_flow(co, code_bytes, consts, varnames,
         co, transformed, consts, varnames)
     if not frame_ok:
         return code_bytes, original_consts, original_varnames, 0
-    return transformed, consts, varnames, len(graph.edges)\n
+    return transformed, consts, varnames, len(graph.edges)

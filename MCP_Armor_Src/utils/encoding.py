@@ -428,4 +428,4 @@ def encode_multilayer_rows(rows):
                 break
         out.append((tag, idx ^ row_key, encoded, row_key))
     random.shuffle(out)
-    return out\n
+    return out

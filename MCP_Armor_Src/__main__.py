@@ -6,4 +6,4 @@ from MCP_Armor_Src.main_start import main_run
 
 
 if __name__ == '__main__':
-    main_run()\n
+    main_run()

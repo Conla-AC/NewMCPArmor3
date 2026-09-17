@@ -144,4 +144,4 @@ def default_other():
                 log_enabled=True, no_bytecode_obf=False, opcode_replacement=True,
                 mcs_opmap_version=1, anti_debug=False, write_rename_mapping=True,
                 exclude='modMain.py; config.py; __init__.py',
-                ast_exclude='', source_only='', module_rename_exclude='modMain.py; config.py; __init__.py')\n
+                ast_exclude='', source_only='', module_rename_exclude='modMain.py; config.py; __init__.py')
